@@ -19,12 +19,6 @@ enum class PairCall {
   Second
 }
 
-inline fun <A, B, R> inlineInvoke(crossinline block: (A, B) -> R, a: A, b: B): R {
-  contract {
-    callsInPlace(block, InvocationKind.EXACTLY_ONCE)
-  }
-  return block(a, b)
-}
 
 // Mimicking a constructor for the type.
 inline fun <F, S> ZeroCostPair(first: F, second: S): ZeroCostPair<F, S> =

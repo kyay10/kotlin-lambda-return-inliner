@@ -36,7 +36,9 @@ import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.util.OperatorNameConventions
 
 fun IrValueParameter.isInlineParameter(type: IrType = this.type) =
-  index >= 0 && !isNoinline && !type.isNullable() && (type.isFunction() || type.isSuspendFunction())
+  index >= 0 /*&& !isNoinline removed because it forces inline functions to be unable to return a passed in lambda
+  TODO: find a more elegant solution for this*/
+    && !type.isNullable() && (type.isFunction() || type.isSuspendFunction())
 
 interface InlineFunctionResolver {
   fun getFunctionDeclaration(symbol: IrFunctionSymbol): IrFunction
