@@ -1,0 +1,4 @@
+rootProject.name = "sample"
+
+includeBuild("..")
+
