@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package com.github.kyay10
+package com.github.kyay10.kotlinlambdareturninliner
 
 import com.tschuchort.compiletesting.KotlinCompilation
 import com.tschuchort.compiletesting.SourceFile
