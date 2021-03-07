@@ -1,4 +1,4 @@
-package com.github.kyay10
+package com.github.kyay10.kotlinlambdareturninliner
 
 
 sealed class Input22<in A, in B, in C, in D, in E, in F, in G, in H, in I, in J, in K, in L, in M, in N, in O, in P, in Q, in R, in S, in T, in U, in V>

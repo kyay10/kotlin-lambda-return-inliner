@@ -2,9 +2,6 @@ plugins {
   kotlin("multiplatform")
 }
 
-group = "com.github.kyay10"
-version = "0.1.0-SNAPSHOT"
-
 repositories {
   mavenCentral()
 }
@@ -15,7 +12,6 @@ kotlin {
     compilations.all {
       kotlinOptions.jvmTarget = "1.8"
       kotlinOptions.useIR = true
-      //compileKotlinTaskProvider.configure { dependsOn(gradle.includedBuild("kotlin-lambda-return-inliner").task(":compileKotlin")) }
     }
     testRuns["test"].executionTask.configure {
       useJUnit()

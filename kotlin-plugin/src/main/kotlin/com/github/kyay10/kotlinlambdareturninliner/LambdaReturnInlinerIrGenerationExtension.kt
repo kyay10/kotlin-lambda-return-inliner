@@ -15,10 +15,10 @@
  * limitations under the License.
  */
 
-package com.github.kyay10
+package com.github.kyay10.kotlinlambdareturninliner
 
-import com.github.kyay10.internal.accumulateStatementsExceptLast
-import com.github.kyay10.internal.inline
+import com.github.kyay10.kotlinlambdareturninliner.internal.accumulateStatementsExceptLast
+import com.github.kyay10.kotlinlambdareturninliner.internal.inline
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
 import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
 import org.jetbrains.kotlin.backend.common.extensions.IrGenerationExtension

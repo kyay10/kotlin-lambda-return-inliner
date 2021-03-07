@@ -18,7 +18,7 @@ dependencies {
 }
 
 buildConfig {
-  packageName(group.toString())
+  packageName(group.toString().replace("-", ""))
   buildConfigField("String", "KOTLIN_PLUGIN_ID", "\"${rootProject.extra["kotlin_plugin_id"]}\"")
 }
 

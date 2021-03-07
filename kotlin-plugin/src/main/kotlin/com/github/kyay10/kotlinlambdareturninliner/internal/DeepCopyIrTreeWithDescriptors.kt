@@ -1,4 +1,4 @@
-package com.github.kyay10.internal
+package com.github.kyay10.kotlinlambdareturninliner.internal
 
 /*
  * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.

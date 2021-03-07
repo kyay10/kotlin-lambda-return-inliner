@@ -15,8 +15,7 @@ dependencies {
 
 tasks.named("compileKotlin") { dependsOn("syncSource") }
 tasks.register<Sync>("syncSource") {
-  println(project(":kotlin-ir-plugin"))
-  from(project(":kotlin-ir-plugin").sourceSets.main.get().allSource)
+  from(project(":kotlin-plugin").sourceSets.main.get().allSource)
   into("src/main/kotlin")
   filter {
     // Replace shadowed imports from plugin module
