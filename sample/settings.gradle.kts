@@ -7,5 +7,5 @@ pluginManagement {
 
 rootProject.name = "sample"
 
-//includeBuild("..")
+includeBuild("..")
 
