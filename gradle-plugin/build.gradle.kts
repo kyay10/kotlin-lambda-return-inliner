@@ -48,7 +48,7 @@ pluginBundle {
   vcsUrl = website
   description = pluginDescription
 
-  version = "0.1.0-SNAPSHOT"
+  version = "0.1.1-SNAPSHOT"
   (plugins) {
     pluginName {
       displayName = pluginDisplayName
@@ -66,7 +66,7 @@ pluginBundle {
         "functional programming",
         "graphics"
       )
-      version = "0.1.0-SNAPSHOT"
+      version = "0.1.1-SNAPSHOT"
     }
   }
 
