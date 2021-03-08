@@ -12,6 +12,9 @@ dependencies {
   kapt("com.google.auto.service:auto-service:1.0-rc7")
   compileOnly("com.google.auto.service:auto-service-annotations:1.0-rc7")
 
+  // Needed for running tests since the tests inherit out classpath
+  implementation(project(":prelude"))
+
   testImplementation(kotlin("test-junit"))
   testImplementation("org.jetbrains.kotlin:kotlin-compiler-embeddable")
   testImplementation("com.github.tschuchortdev:kotlin-compile-testing:1.3.4")

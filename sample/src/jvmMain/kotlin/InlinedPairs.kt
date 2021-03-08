@@ -37,8 +37,8 @@ inline fun <F, S> ZeroCostPair(first: F, second: S): ZeroCostPair<F, S> =
 // the factory function always follow the pattern of returning an F if PairCall.First is passed in and likewise for S.
 // However, if stricter type safety is needed (which it is if you're building a library), then inline classes with lambdas should
 // be implemented so that one can make the constructor internal and then have a factory function that takes in F and S values
-inline val <F, S> ZeroCostPair<F, S>.first get() = inlineInvoke(this, PairCall.First, Input).value as F
-inline val <F, S> ZeroCostPair<F, S>.second get() = inlineInvoke(this, PairCall.Second, Input).value as S
+inline val <F, S> ZeroCostPair<F, S>.first get() = this(PairCall.First, Input).value as F
+inline val <F, S> ZeroCostPair<F, S>.second get() = this(PairCall.Second, Input).value as S
 
 fun main() {
   val test2 = Marka()

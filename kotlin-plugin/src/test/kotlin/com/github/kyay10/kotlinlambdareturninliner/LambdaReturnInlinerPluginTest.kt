@@ -49,13 +49,6 @@ class LambdaReturnInlinerPluginTest {
       Second
   }
   
-  inline fun <A, B, R> inlineInvoke(crossinline block: (A, B) -> R, a: A, b: B): R {
-      contract {
-          callsInPlace(block, InvocationKind.EXACTLY_ONCE)
-      }
-      return block(a, b)
-  }
-  
   // Mimicking a constructor for the type.
   inline fun <F, S> ZeroCostPair(first: F, second: S): ZeroCostPair<F, S> {
       println("enter ZeroCostPair(${"$"}first, ${"$"}second)")
@@ -78,12 +71,13 @@ class LambdaReturnInlinerPluginTest {
   // the factory function always follow the pattern of returning an F if PairCall.First is passed in and likewise for S.
   // However, if stricter type safety is needed (which it is if you're building a library), then inline classes with lambdas should
   // be implemented so that one can make the constructor internal and then have a factory function that takes in F and S values
-  inline val <F, S> ZeroCostPair<F, S>.first get() = inlineInvoke(this, PairCall.First, Input).value as F
-  inline val <F, S> ZeroCostPair<F, S>.second get() = inlineInvoke(this, PairCall.Second, Input).value as S
-  
+  inline val <F, S> ZeroCostPair<F, S>.first get() = this(PairCall.First, Input).value as F
+  inline val <F, S> ZeroCostPair<F, S>.second get() = this(PairCall.Second, Input).value as S
+  inline val <F, S> ZeroCostPair<F, S>.curryThenFirst:() -> F get() = {this(PairCall.First, Input) . value as F}
   fun main() {
       val test2 = Marka()
       val values = computeValues(25 + test2.hashCode(), "Hallo")
+      println(values.curryThenFirst())
       println(values.second)
       println("The answer to life, the universe, and everything in between = ${"$"}{values.first}")
       val test: Marka

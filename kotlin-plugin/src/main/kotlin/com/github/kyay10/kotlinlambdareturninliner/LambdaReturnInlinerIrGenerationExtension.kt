@@ -30,16 +30,36 @@ import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.builders.declarations.buildFun
+import org.jetbrains.kotlin.ir.builders.declarations.buildTypeParameter
+import org.jetbrains.kotlin.ir.builders.declarations.buildValueParameter
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.IrFunctionExpressionImpl
 import org.jetbrains.kotlin.ir.types.*
+import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeImpl
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.*
+import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.resolve.jvm.annotations.JVM_SYNTHETIC_ANNOTATION_FQ_NAME
+import org.jetbrains.kotlin.util.OperatorNameConventions
 import org.jetbrains.kotlin.utils.addToStdlib.cast
 import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 import java.io.File
+
+val INLINE_INVOKE_FQNAME = FqName("com.github.kyay10.kotlinlambdareturninliner.inlineInvoke")
+
+open class IrFileTransformerVoidWithContext : IrElementTransformerVoidWithContext(), FileLoweringPass {
+  protected lateinit var file: IrFile
+  protected lateinit var fileSource: String
+  override fun lower(irFile: IrFile) {
+    file = irFile
+    fileSource = File(irFile.path).readText()
+      .replace("\r\n", "\n") // https://youtrack.jetbrains.com/issue/KT-41888
+
+    irFile.transformChildrenVoid()
+  }
+}
 
 class LambdaReturnInlinerIrGenerationExtension(
   private val messageCollector: MessageCollector,
@@ -48,20 +68,117 @@ class LambdaReturnInlinerIrGenerationExtension(
   override fun generate(moduleFragment: IrModuleFragment, pluginContext: IrPluginContext) {
     //println(moduleFragment.dump())
     val tempsToAdd: MutableMap<IrFunction, MutableList<IrVariable>> = mutableMapOf()
-    val transformer = InlineHigherOrderFunctionsAndVariablesTransformer(pluginContext)
-    moduleFragment.also(transformer::lower)
-    moduleFragment.also(object : IrElementTransformerVoidWithContext(), FileLoweringPass {
+    val deferredAddedFunctions: MutableMap<IrFunction, IrFile> = mutableMapOf()
+    moduleFragment.lowerWith(object : IrFileTransformerVoidWithContext() {
+      // Basically just searches for this function:
+      // ```
+      // inline fun <R> inlineInvoke(block: () -> R): R {
+      //  return block()
+      //}
+      //```
+      val inlineInvoke0 = pluginContext.referenceFunctions(INLINE_INVOKE_FQNAME)
+        .first {
+          it.owner.let { irFunction ->
+            irFunction.valueParameters.size == 1 &&
+              irFunction.typeParameters.size == 1 &&
+              irFunction.returnType.cast<IrSimpleType>().classifier.owner == irFunction.typeParameters.first() &&
+              irFunction.isInline &&
+              irFunction.valueParameters.first().type.isFunctionTypeOrSubtype()
+          }
+        }.owner
 
-      private lateinit var file: IrFile
-      private lateinit var fileSource: String
-      override fun lower(irFile: IrFile) {
-        file = irFile
-        fileSource = File(irFile.path).readText()
-          .replace("\r\n", "\n") // https://youtrack.jetbrains.com/issue/KT-41888
+      val inlineInvokeDefs = mutableListOf<IrSimpleFunction?>()//inlineInvoke0)
 
-        irFile.transformChildrenVoid()
+      override fun visitFunctionAccess(expression: IrFunctionAccessExpression): IrExpression {
+        var returnExpression = expression
+        val irFunction = expression.symbol.owner
+        if (
+          irFunction.name == OperatorNameConventions.INVOKE &&
+          irFunction.safeAs<IrSimpleFunction>()?.isOperator == true &&
+          expression.dispatchReceiver?.type?.isFunctionTypeOrSubtype() == true &&
+          expression.extensionReceiver == null &&
+          currentFunction?.irElement.safeAs<IrFunction>()?.fqNameWhenAvailable != INLINE_INVOKE_FQNAME
+        ) {
+          val replacementInlineInvokeFunction =
+            inlineInvokeDefs.getOrNull(expression.valueArgumentsCount)
+              ?: inlineInvoke0.parent.cast<IrDeclaration>().factory.buildFun {
+                updateFrom(inlineInvoke0)
+                name = inlineInvoke0.name
+                returnType = inlineInvoke0.returnType
+                containerSource = null
+              }.apply {
+                annotations = listOf(DeclarationIrBuilder(pluginContext, currentScope!!.scope.scopeOwnerSymbol).irCallConstructor(pluginContext.referenceConstructors(
+                  JVM_SYNTHETIC_ANNOTATION_FQ_NAME
+                ).first(), emptyList()))
+                val initialTypeParameter = inlineInvoke0.typeParameters[0].deepCopyWithSymbols(this)
+                typeParameters = initialTypeParameter + buildList {
+                  for (i in 1..expression.valueArgumentsCount) {
+                    add(buildTypeParameter(this@apply) {
+                      updateFrom(initialTypeParameter)
+                      index = i
+                      name = Name.identifier(
+                        currentScope!!.scope.inventNameForTemporary(
+                          prefix = "type",
+                          nameHint = i.toString()
+                        )
+                      )
+                      superTypes.addAll(initialTypeParameter.superTypes)
+                    })
+                  }
+                }
+                valueParameters = inlineInvoke0.valueParameters[0].deepCopyWithSymbols(this).apply {
+                  type = pluginContext.irBuiltIns.function(expression.valueArgumentsCount)
+                    .typeWith(
+                      typeParameters.drop(1).map { it.createSimpleType() } + initialTypeParameter.createSimpleType())
+                } + buildList {
+                  for (i in 1..expression.valueArgumentsCount)
+                    add(buildValueParameter(this@apply) {
+                      index = i
+                      name = Name.identifier(
+                        currentScope!!.scope.inventNameForTemporary(
+                          prefix = "param",
+                          nameHint = i.toString()
+                        )
+                      )
+                      type = typeParameters[i].createSimpleType()
+                    })
+                }
+                body = DeclarationIrBuilder(pluginContext, symbol).irBlockBody {
+                  +irReturn(irCall(irFunction).apply {
+                    dispatchReceiver = irGet(valueParameters[0])
+                    for (valueParameter in valueParameters.drop(1))
+                      putValueArgument(valueParameter.index - 1, irGet(valueParameter))
+                  })
+                }
+              }.also {
+                while(inlineInvokeDefs.size <= expression.valueArgumentsCount) inlineInvokeDefs.add(null)
+                inlineInvokeDefs[expression.valueArgumentsCount] = it
+                deferredAddedFunctions[it] = file
+              }
+          returnExpression = DeclarationIrBuilder(pluginContext, currentScope!!.scope.scopeOwnerSymbol).irCall(
+            replacementInlineInvokeFunction
+          ).apply {
+            putValueArgument(0, expression.dispatchReceiver)
+            putTypeArgument(0, expression.type)
+            for (i in 1..expression.valueArgumentsCount) {
+              val currentValueArgument = expression.getValueArgument(i - 1)
+              putValueArgument(i, currentValueArgument)
+              putTypeArgument(i, currentValueArgument?.type)
+            }
+          }
+        }
+        return super.visitFunctionAccess(returnExpression)
       }
+    })
 
+    for((deferredAddedFunction, file) in deferredAddedFunctions) {
+      file.declarations.add(deferredAddedFunction)
+      deferredAddedFunction.parent = file
+    }
+
+    val transformer = InlineHigherOrderFunctionsAndVariablesTransformer(pluginContext)
+    moduleFragment.lowerWith(transformer)
+    moduleFragment.lowerWith(object : IrFileTransformerVoidWithContext() {
       val functionAccesses = mutableListOf<IrExpression>()
       override fun visitFunctionAccess(expression: IrFunctionAccessExpression): IrExpression {
         val result = expression.run {
@@ -98,19 +215,9 @@ class LambdaReturnInlinerIrGenerationExtension(
         }
         return super.visitExpression(result)
       }
-    }::lower)
-    moduleFragment.also(object :
-      IrElementTransformerVoidWithContext(), FileLoweringPass {
-      private lateinit var file: IrFile
-      private lateinit var fileSource: String
-      override fun lower(irFile: IrFile) {
-        file = irFile
-        fileSource = File(irFile.path).readText()
-          .replace("\r\n", "\n") // https://youtrack.jetbrains.com/issue/KT-41888
-
-        irFile.transformChildrenVoid()
-      }
-
+    })
+    moduleFragment.lowerWith(object :
+      IrFileTransformerVoidWithContext() {
       override fun visitFunctionNew(declaration: IrFunction): IrStatement {
         tempsToAdd[declaration] = tempsToAdd[declaration] ?: mutableListOf()
         return super.visitFunctionNew(declaration)
@@ -142,19 +249,10 @@ class LambdaReturnInlinerIrGenerationExtension(
           }
         } else super.visitVariable(declaration)
       }
-    }::lower)
-    moduleFragment.also(object :
-      IrElementTransformerVoidWithContext(), FileLoweringPass {
-      private lateinit var file: IrFile
-      private lateinit var fileSource: String
-      override fun lower(irFile: IrFile) {
-        file = irFile
-        fileSource = File(irFile.path).readText()
-          .replace("\r\n", "\n") // https://youtrack.jetbrains.com/issue/KT-41888
-
-        irFile.transformChildrenVoid()
-      }/*
-
+    })
+    moduleFragment.lowerWith(object :
+      IrFileTransformerVoidWithContext() {
+      /*
       override fun visitVariable(declaration: IrVariable): IrStatement {
         return if (declaration.origin == IrDeclarationOrigin.IR_TEMPORARY_VARIABLE && declaration.type.isFunctionTypeOrSubtype()) DeclarationIrBuilder(
           pluginContext,
@@ -177,7 +275,7 @@ class LambdaReturnInlinerIrGenerationExtension(
           }
         return super.visitFunctionNew(declaration)
       }
-    }::lower)
+    })
     println(moduleFragment.dump())
   }
 }
@@ -185,24 +283,9 @@ class LambdaReturnInlinerIrGenerationExtension(
 
 class InlineHigherOrderFunctionsAndVariablesTransformer(
   private val context: IrPluginContext
-) : IrElementTransformerVoidWithContext(), FileLoweringPass {
-  private lateinit var file: IrFile
-  private lateinit var fileSource: String
+) : IrFileTransformerVoidWithContext() {
+
   private val varMap: MutableMap<IrVariable, IrExpression> = mutableMapOf()
-
-  override fun visitFunctionExpression(expression: IrFunctionExpression): IrExpression {
-    return super.visitFunctionExpression(expression)
-  }
-
-  override fun lower(irFile: IrFile) {
-    file = irFile
-    fileSource = File(irFile.path).readText()
-      .replace("\r\n", "\n") // https://youtrack.jetbrains.com/issue/KT-41888
-
-    irFile.transformChildrenVoid()
-  }
-
-
   override fun visitVariable(declaration: IrVariable): IrStatement {
     if (declaration.type.isFunctionTypeOrSubtype()) declaration.initializer?.let { varMap.put(declaration, it) }
     return super.visitVariable(declaration)
@@ -449,3 +532,22 @@ public fun <T> List<T>.indexOfOrNull(element: T): Int? {
 public fun <T : Any> Iterable<IndexedValue<T?>>.filterNotNull(): List<IndexedValue<T>> {
   return filter { it.value != null } as List<IndexedValue<T>>
 }
+
+fun IrModuleFragment.lowerWith(pass: FileLoweringPass) = pass.lower(this)
+
+/**
+ * Returns a list containing the original element and then the given [collection].
+ */
+public operator fun <T> T.plus(collection: Collection<T>): List<T> {
+  val result = ArrayList<T>(collection.size + 1)
+  result.add(this)
+  result.addAll(collection)
+  return result
+}
+
+fun IrTypeParameter.createSimpleType(
+  hasQuestionMark: Boolean = false,
+  arguments: List<IrTypeArgument> = emptyList(),
+  annotations: List<IrConstructorCall> = emptyList(),
+  abbreviation: IrTypeAbbreviation? = null
+): IrSimpleType = IrSimpleTypeImpl(symbol, hasQuestionMark, arguments, annotations, abbreviation)
