@@ -19,17 +19,21 @@ enum class PairCall {
   Second
 }
 
-
 // Mimicking a constructor for the type.
-inline fun <F, S> ZeroCostPair(first: F, second: S): ZeroCostPair<F, S> =
-  lambda@{ call, _ -> // Those parameters are solely a trick to carry type information, and so they should be ignored
-    return@lambda Output(
-      when (call) {
-        PairCall.First -> first
-        PairCall.Second -> second
-      }
-    )
-  }
+inline fun <F, S> ZeroCostPair(first: F, second: S): ZeroCostPair<F, S> {
+  println("enter ZeroCostPair($first, $second)")
+  val function: (PairCall, Input0) -> Output =
+    lambda@{ call, _ -> // Those parameters are solely a trick to carry type information, and so they should be ignored
+      return@lambda Output(
+        when (call) {
+          PairCall.First -> first
+          PairCall.Second -> second
+        }
+      )
+    }
+  println("exit ZeroCostPair($first, $second)")
+  return function
+}
 
 // Again, the parameters are useless, so just pass in null for them since during runtime the JVM won't actually know what
 // F and S are since they get erased.
@@ -39,10 +43,11 @@ inline fun <F, S> ZeroCostPair(first: F, second: S): ZeroCostPair<F, S> =
 // be implemented so that one can make the constructor internal and then have a factory function that takes in F and S values
 inline val <F, S> ZeroCostPair<F, S>.first get() = this(PairCall.First, Input).value as F
 inline val <F, S> ZeroCostPair<F, S>.second get() = this(PairCall.Second, Input).value as S
-
+inline val <F, S> ZeroCostPair<F, S>.curryThenFirst: () -> F get() = { this(PairCall.First, Input).value as F }
 fun main() {
   val test2 = Marka()
   val values = computeValues(25 + test2.hashCode(), "Hallo")
+  println(values.curryThenFirst())
   println(values.second)
   println("The answer to life, the universe, and everything in between = ${values.first}")
   val test: Marka
@@ -64,7 +69,10 @@ fun main() {
 
 
 inline fun computeValues(number: Int, text: String): ZeroCostPair<Int, String> {
-  return ZeroCostPair(number + 5, "$text World!")
+  println("enter computeValues($number, $text)")
+  val pair = ZeroCostPair(number + 5, "$text World!")
+  println("exit computeValues($number, $text)")
+  return pair
 }
 
 inline fun computeValues(number: Int, text: String, block: (Int, String) -> Unit) {

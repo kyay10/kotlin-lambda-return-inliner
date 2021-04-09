@@ -24,6 +24,8 @@ import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.com.intellij.mock.MockProject
 import org.jetbrains.kotlin.compiler.plugin.ComponentRegistrar
 import org.jetbrains.kotlin.config.CompilerConfiguration
+import org.jetbrains.kotlin.extensions.CollectAdditionalSourcesExtension
+import org.jetbrains.kotlin.resolve.jvm.extensions.AnalysisHandlerExtension
 
 @AutoService(ComponentRegistrar::class)
 
@@ -34,9 +36,9 @@ class LambdaReturnInlinerComponentRegistrar @Suppress("unused") constructor() : 
     configuration: CompilerConfiguration
   ) {
     val messageCollector = configuration.get(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY, MessageCollector.NONE)
-
-    IrGenerationExtension.registerExtension(project, LambdaReturnInlinerIrGenerationExtension(messageCollector))
+    val generatedSourcesDir = configuration[LambdaReturnInlinerCommandLineProcessor.generatedSourcesDir]
+    CollectAdditionalSourcesExtension.registerExtension(project, LambdaReturnInlinerExternalInlineSources(project, messageCollector, configuration))
+    AnalysisHandlerExtension.registerExtension(project, LambdaReturnInlinerAnalysisHandler(messageCollector, configuration, generatedSourcesDir))
+    IrGenerationExtension.registerExtension(project, LambdaReturnInlinerIrGenerationExtension(project, messageCollector, configuration))
   }
 }
-
-

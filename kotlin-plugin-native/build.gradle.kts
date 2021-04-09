@@ -7,6 +7,8 @@ plugins {
 }
 
 dependencies {
+  implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.2.0")
+  implementation("org.ow2.asm:asm:9.1")
   compileOnly("org.jetbrains.kotlin:kotlin-compiler")
 
   kapt("com.google.auto.service:auto-service:1.0-rc7")
@@ -22,10 +24,7 @@ tasks.register<Sync>("syncSource") {
   into("src/main/kotlin")
   filter {
     // Replace shadowed imports from plugin module
-    when (it) {
-      "import org.jetbrains.kotlin.com.intellij.mock.MockProject" -> "import com.intellij.mock.MockProject"
-      else -> it
-    }
+    it.replace("import org.jetbrains.kotlin.com.intellij.", "import com.intellij.")
   }
 }
 

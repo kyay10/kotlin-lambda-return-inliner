@@ -18,7 +18,6 @@
 package com.github.kyay10.kotlinlambdareturninliner
 
 
-import com.github.kyay10.kotlinlambdareturninliner.BuildConfig
 import org.gradle.api.Project
 import org.gradle.api.provider.Provider
 import org.jetbrains.kotlin.gradle.plugin.KotlinCompilation
@@ -53,11 +52,17 @@ class LambdaReturnInlinerGradlePlugin : KotlinCompilerPluginSupportPlugin {
     val project = kotlinCompilation.target.project
     val extension = project.extensions.getByType(LambdaReturnInlinerGradleExtension::class.java)
 
+    val sourceSetName =
+      kotlinCompilation.compilationName
+
     kotlinCompilation.dependencies {
       implementation("${BuildConfig.PRELUDE_LIBRARY_GROUP}:${BuildConfig.PRELUDE_LIBRARY_NAME}:${BuildConfig.PRELUDE_LIBRARY_VERSION}")
     }
+
     return project.provider {
-      listOf()
+      listOf(
+        SubpluginOption(key = "generatedSourcesDir", value = extension.generatedSourcesDir.dir(sourceSetName).asFile.path),
+      )
     }
   }
 }

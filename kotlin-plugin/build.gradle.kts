@@ -6,14 +6,19 @@ plugins {
   id("com.github.gmazzo.buildconfig")
 }
 
+repositories {
+  mavenCentral()
+}
 dependencies {
+  implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.2.0")
+  implementation("org.ow2.asm:asm:9.1")
   compileOnly("org.jetbrains.kotlin:kotlin-compiler-embeddable")
 
   kapt("com.google.auto.service:auto-service:1.0-rc7")
   compileOnly("com.google.auto.service:auto-service-annotations:1.0-rc7")
 
   // Needed for running tests since the tests inherit out classpath
-  implementation(project(":prelude"))
+  api(project(":prelude"))
 
   testImplementation(kotlin("test-junit"))
   testImplementation("org.jetbrains.kotlin:kotlin-compiler-embeddable")
@@ -22,7 +27,9 @@ dependencies {
 
 buildConfig {
   packageName(group.toString().replace("-", ""))
-  buildConfigField("String", "KOTLIN_PLUGIN_ID", "\"${rootProject.extra["kotlin_plugin_id"]}\"")
+  buildConfigField("String", "KOTLIN_PLUGIN_ID", "\"${rootProject.extra["kotlin_plugin_id"].toString().replace("-", "")}\"")
+  buildConfigField("String", "SAMPLE_JVM_MAIN_PATH", "\"${rootProject.projectDir.absolutePath}/sample/src/jvmMain/kotlin/\"")
+  buildConfigField("String", "SAMPLE_GENERATED_SOURCES_DIR", "\"${rootProject.projectDir.absolutePath}/sample/build/generated/source/kotlinLambdaReturnInliner/jvmMain\"")
 }
 
 tasks.withType<KotlinCompile> {

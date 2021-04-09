@@ -19,8 +19,13 @@ package com.github.kyay10.kotlinlambdareturninliner
 
 import com.google.auto.service.AutoService
 import org.jetbrains.kotlin.compiler.plugin.CommandLineProcessor
+import java.io.File
 
 @AutoService(CommandLineProcessor::class)
 class LambdaReturnInlinerCommandLineProcessor : CommandLineProcessor by Companion {
-  companion object : OptionCommandLineProcessor(BuildConfig.KOTLIN_PLUGIN_ID)
+  companion object : OptionCommandLineProcessor(BuildConfig.KOTLIN_PLUGIN_ID){
+    val generatedSourcesDir by option("generatedSourcesDir", "generatedSourcesDir", "The full path to the directory to place all generated .kt files into. Used by this plugin to place shadowed external inline functions just to copy their bodies over", true){
+      File(it)
+    }
+  }
 }

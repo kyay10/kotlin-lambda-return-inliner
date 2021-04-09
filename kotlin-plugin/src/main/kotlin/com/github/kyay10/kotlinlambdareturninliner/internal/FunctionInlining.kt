@@ -56,12 +56,6 @@ fun IrFunction.isBuiltInIntercepted(languageVersionSettings: LanguageVersionSett
   !languageVersionSettings.supportsFeature(LanguageFeature.ReleaseCoroutines) &&
     isTopLevelInPackage("intercepted", languageVersionSettings.coroutinesIntrinsicsPackageFqName().asString())
 
-fun IrFunction.isBuiltInSuspendCoroutineUninterceptedOrReturn(languageVersionSettings: LanguageVersionSettings): Boolean =
-  isTopLevelInPackage(
-    "suspendCoroutineUninterceptedOrReturn",
-    languageVersionSettings.coroutinesIntrinsicsPackageFqName().asString()
-  )
-
 open class DefaultInlineFunctionResolver(open val context: IrPluginContext) : InlineFunctionResolver {
   override fun getFunctionDeclaration(symbol: IrFunctionSymbol): IrFunction {
     val function = symbol.owner

@@ -15,6 +15,7 @@ kotlin {
     compilations.all {
       kotlinOptions.jvmTarget = "1.8"
       kotlinOptions.useIR = true
+      kotlinOptions.freeCompilerArgs += "-Xallow-kotlin-package"
     }
     testRuns["test"].executionTask.configure {
       useJUnit()

@@ -20,63 +20,132 @@ package com.github.kyay10.kotlinlambdareturninliner
 import com.github.kyay10.kotlinlambdareturninliner.internal.accumulateStatementsExceptLast
 import com.github.kyay10.kotlinlambdareturninliner.internal.inline
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
-import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
 import org.jetbrains.kotlin.backend.common.extensions.IrGenerationExtension
 import org.jetbrains.kotlin.backend.common.extensions.IrPluginContext
 import org.jetbrains.kotlin.backend.common.lower
 import org.jetbrains.kotlin.backend.common.lower.DeclarationIrBuilder
 import org.jetbrains.kotlin.backend.common.lower.at
+import org.jetbrains.kotlin.backend.jvm.JvmGeneratorExtensions
 import org.jetbrains.kotlin.cli.common.messages.MessageCollector
+import org.jetbrains.kotlin.com.intellij.openapi.project.Project
+import org.jetbrains.kotlin.config.CompilerConfiguration
+import org.jetbrains.kotlin.contracts.parsing.isContractCallDescriptor
 import org.jetbrains.kotlin.ir.IrStatement
+import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
+import org.jetbrains.kotlin.ir.backend.jvm.JvmLibraryResolver
 import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.builders.declarations.buildFun
 import org.jetbrains.kotlin.ir.builders.declarations.buildTypeParameter
 import org.jetbrains.kotlin.ir.builders.declarations.buildValueParameter
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
+import org.jetbrains.kotlin.ir.expressions.IrTypeOperator.*
 import org.jetbrains.kotlin.ir.expressions.impl.IrFunctionExpressionImpl
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeImpl
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.*
+import org.jetbrains.kotlin.library.UnresolvedLibrary
+import org.jetbrains.kotlin.library.resolver.KotlinLibraryResolveResult
+import org.jetbrains.kotlin.library.resolver.impl.libraryResolver
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.platform.jvm.JvmPlatform
+import org.jetbrains.kotlin.psi2ir.Psi2IrConfiguration
+import org.jetbrains.kotlin.psi2ir.Psi2IrTranslator
+import org.jetbrains.kotlin.psi2ir.generators.GeneratorExtensions
+import org.jetbrains.kotlin.resolve.jvm.KotlinJavaPsiFacade
 import org.jetbrains.kotlin.resolve.jvm.annotations.JVM_SYNTHETIC_ANNOTATION_FQ_NAME
+import org.jetbrains.kotlin.util.Logger
 import org.jetbrains.kotlin.util.OperatorNameConventions
 import org.jetbrains.kotlin.utils.addToStdlib.cast
-import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 import java.io.File
+import kotlin.contracts.ExperimentalContracts
+import kotlin.contracts.InvocationKind
+import kotlin.contracts.contract
 
 val INLINE_INVOKE_FQNAME = FqName("com.github.kyay10.kotlinlambdareturninliner.inlineInvoke")
 
-open class IrFileTransformerVoidWithContext : IrElementTransformerVoidWithContext(), FileLoweringPass {
-  protected lateinit var file: IrFile
-  protected lateinit var fileSource: String
-  override fun lower(irFile: IrFile) {
-    file = irFile
-    fileSource = File(irFile.path).readText()
-      .replace("\r\n", "\n") // https://youtrack.jetbrains.com/issue/KT-41888
-
-    irFile.transformChildrenVoid()
-  }
-}
-
 class LambdaReturnInlinerIrGenerationExtension(
+  val project: Project,
   private val messageCollector: MessageCollector,
+  private val compilerConfig: CompilerConfiguration
 ) : IrGenerationExtension {
-  @OptIn(ExperimentalStdlibApi::class)
+  @OptIn(ExperimentalStdlibApi::class, ObsoleteDescriptorBasedAPI::class)
   override fun generate(moduleFragment: IrModuleFragment, pluginContext: IrPluginContext) {
+    val translator = Psi2IrTranslator(
+      pluginContext.languageVersionSettings,
+      Psi2IrConfiguration()
+    )
+    val genContext = translator.createGeneratorContext(moduleFragment.descriptor,
+      pluginContext.bindingContext,
+      pluginContext.symbolTable as SymbolTable,
+      when {
+        pluginContext.platform?.any { it is JvmPlatform } == true -> JvmGeneratorExtensions()
+        else -> GeneratorExtensions()
+      })
+    val facade = KotlinJavaPsiFacade.getInstance(project)
+    /* translator.generateModuleFragment(genContext, listOf(PsiFileFactory.getInstance(project).createFileFromText(KotlinLanguage.INSTANCE, """
+       fun main() {
+         println("hello world")
+       }
+     """.trimIndent()) as KtFile), emptyList(), emptyList())*/
+    //translator.generateModuleFragment(genContext, listOf())
+    /*  val resolvedKlibs = jvmResolveLibraries(buildList {
+        addAll(jvmLibrariesProvidedByDefault)
+        compilerConfig.get(JVMConfigurationKeys.KLIB_PATHS)?.let { addAll(it) }
+      }, messageCollector.toLogger()).getFullList()
+  */
+    /*val test = jsResolveLibraries(configureLibraries("/home/digiadmin/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib-common/1.4.31/6dd50665802f54ba9bc3f70ecb20227d1bc81323/kotlin-stdlib-common-1.4.31.jar")/*jvmLibrariesProvidedByDefault.toList()*/, object: Logger {
+      override fun error(message: String) {
+
+      }
+
+      override fun fatal(message: String): Nothing {
+        TODO("Not yet implemented")
+      }
+
+      override fun log(message: String) {
+
+      }
+
+      override fun warning(message: String) {
+
+      }
+    })
+    println(test)*/
+    /*val resolvedLibs = jvmResolveLibraries(emptyList(), listOf(KotlinPathsFromHomeDir(PathUtil.pathUtilJar.parentFile.parentFile).stdlibPath.absolutePath), object: Logger {
+      override fun error(message: String) {
+
+      }
+
+      override fun fatal(message: String): Nothing {
+        TODO(KotlinPathsFromHomeDir(PathUtil.pathUtilJar.parentFile.parentFile).stdlibPath.absolutePath)
+      }
+
+      override fun log(message: String) {
+
+      }
+
+      override fun warning(message: String) {
+
+      }
+    })
+*///      pluginContext.cast<IrPluginContextImpl>().linker.cast<KotlinIrLinker>().deserializeFullModule(, resolvedLibs.first())
+
+    /*((((((((((((moduleFragment as IrModuleFragmentImpl).files as java.util.ArrayList<*>)[4] as IrFileImpl).declarations as java.util.ArrayList<*>)[0] as IrFunctionImpl).body as IrBlockBodyImpl).statements as java.util.ArrayList<*>)[1] as IrCallImpl).symbol as IrSimpleFunctionPublicSymbolImpl).descriptor as DeserializedSimpleFunctionDescriptor).containingDeclaration as LazyJavaPackageFragment).jPackage as JavaPackageImpl).psiElement.directories*/
     //println(moduleFragment.dump())
+    //((((((((((((((((((((moduleFragment as IrModuleFragmentImpl).files as java.util.ArrayList<*>)[4] as IrFileImpl).declarations as java.util.ArrayList<*>)[0] as IrFunctionImpl).body as IrBlockBodyImpl).statements as java.util.ArrayList<*>)[10] as IrTypeOperatorCallImpl).argument as IrBlockImpl).statements as java.util.ArrayList<*>)[1] as IrIfThenElseImpl).branches as org.jetbrains.kotlin.utils.SmartList<*>)[1] as IrElseBranchImpl).result as IrCallImpl).symbol as IrSimpleFunctionPublicSymbolImpl).descriptor as DeserializedSimpleFunctionDescriptor).containingDeclaration as LazyJavaPackageFragment).jPackage as JavaPackageImpl).psi.directories.distinctBy { it.toString() }[1] as PsiDirectoryImpl).myFile as CoreJarVirtualFile).myChildren[7].contentsToByteArray(false)
     val tempsToAdd: MutableMap<IrFunction, MutableList<IrVariable>> = mutableMapOf()
     val deferredAddedFunctions: MutableMap<IrFunction, IrFile> = mutableMapOf()
-    moduleFragment.lowerWith(object : IrFileTransformerVoidWithContext() {
+    moduleFragment.lowerWith(object : IrFileTransformerVoidWithContext(pluginContext) {
       // Basically just searches for this function:
       // ```
       // inline fun <R> inlineInvoke(block: () -> R): R {
       //  return block()
       //}
       //```
-      val inlineInvoke0 = pluginContext.referenceFunctions(INLINE_INVOKE_FQNAME)
+      val inlineInvoke0 = context.referenceFunctions(INLINE_INVOKE_FQNAME)
         .first {
           it.owner.let { irFunction ->
             irFunction.valueParameters.size == 1 &&
@@ -87,11 +156,13 @@ class LambdaReturnInlinerIrGenerationExtension(
           }
         }.owner
 
-      val inlineInvokeDefs = mutableListOf<IrSimpleFunction?>()//inlineInvoke0)
+      // Initialize with the magic number 22 since those are the most common arities.
+      val inlineInvokeDefs = ArrayList<IrSimpleFunction?>(22)//inlineInvoke0)
 
       override fun visitFunctionAccess(expression: IrFunctionAccessExpression): IrExpression {
         var returnExpression = expression
         val irFunction = expression.symbol.owner
+        // Only replace invoke calls
         if (
           irFunction.name == OperatorNameConventions.INVOKE &&
           irFunction.safeAs<IrSimpleFunction>()?.isOperator == true &&
@@ -107,9 +178,13 @@ class LambdaReturnInlinerIrGenerationExtension(
                 returnType = inlineInvoke0.returnType
                 containerSource = null
               }.apply {
-                annotations = listOf(DeclarationIrBuilder(pluginContext, currentScope!!.scope.scopeOwnerSymbol).irCallConstructor(pluginContext.referenceConstructors(
-                  JVM_SYNTHETIC_ANNOTATION_FQ_NAME
-                ).first(), emptyList()))
+                annotations = listOf(
+                  declarationIrBuilder.irCallConstructor(
+                    context.referenceConstructors(
+                      JVM_SYNTHETIC_ANNOTATION_FQ_NAME
+                    ).first(), emptyList()
+                  )
+                )
                 val initialTypeParameter = inlineInvoke0.typeParameters[0].deepCopyWithSymbols(this)
                 typeParameters = initialTypeParameter + buildList {
                   for (i in 1..expression.valueArgumentsCount) {
@@ -127,7 +202,7 @@ class LambdaReturnInlinerIrGenerationExtension(
                   }
                 }
                 valueParameters = inlineInvoke0.valueParameters[0].deepCopyWithSymbols(this).apply {
-                  type = pluginContext.irBuiltIns.function(expression.valueArgumentsCount)
+                  type = context.irBuiltIns.function(expression.valueArgumentsCount)
                     .typeWith(
                       typeParameters.drop(1).map { it.createSimpleType() } + initialTypeParameter.createSimpleType())
                 } + buildList {
@@ -143,19 +218,20 @@ class LambdaReturnInlinerIrGenerationExtension(
                       type = typeParameters[i].createSimpleType()
                     })
                 }
-                body = DeclarationIrBuilder(pluginContext, symbol).irBlockBody {
+                body = declarationIrBuilder(symbol = symbol).irBlockBody {
                   +irReturn(irCall(irFunction).apply {
                     dispatchReceiver = irGet(valueParameters[0])
                     for (valueParameter in valueParameters.drop(1))
                       putValueArgument(valueParameter.index - 1, irGet(valueParameter))
                   })
                 }
-              }.also {
-                while(inlineInvokeDefs.size <= expression.valueArgumentsCount) inlineInvokeDefs.add(null)
-                inlineInvokeDefs[expression.valueArgumentsCount] = it
-                deferredAddedFunctions[it] = file
               }
-          returnExpression = DeclarationIrBuilder(pluginContext, currentScope!!.scope.scopeOwnerSymbol).irCall(
+                .also {
+                  while (inlineInvokeDefs.size <= expression.valueArgumentsCount) inlineInvokeDefs.add(null)
+                  inlineInvokeDefs[expression.valueArgumentsCount] = it
+                  deferredAddedFunctions[it] = file
+                }
+          returnExpression = declarationIrBuilder.irCall(
             replacementInlineInvokeFunction
           ).apply {
             putValueArgument(0, expression.dispatchReceiver)
@@ -171,14 +247,14 @@ class LambdaReturnInlinerIrGenerationExtension(
       }
     })
 
-    for((deferredAddedFunction, file) in deferredAddedFunctions) {
+    for ((deferredAddedFunction, file) in deferredAddedFunctions) {
       file.declarations.add(deferredAddedFunction)
       deferredAddedFunction.parent = file
     }
 
     val transformer = InlineHigherOrderFunctionsAndVariablesTransformer(pluginContext)
     moduleFragment.lowerWith(transformer)
-    moduleFragment.lowerWith(object : IrFileTransformerVoidWithContext() {
+    moduleFragment.lowerWith(object : IrFileTransformerVoidWithContext(pluginContext) {
       val functionAccesses = mutableListOf<IrExpression>()
       override fun visitFunctionAccess(expression: IrFunctionAccessExpression): IrExpression {
         val result = expression.run {
@@ -192,7 +268,7 @@ class LambdaReturnInlinerIrGenerationExtension(
           val lambdaParamsWithBlockArgument = params.withIndex().filterNotNull()
             .filter { it.value.type.isFunctionTypeOrSubtype() && it.value !is IrFunctionExpression }
           if (lambdaParamsWithBlockArgument.isNotEmpty()) {
-            DeclarationIrBuilder(pluginContext, currentScope!!.scope.scopeOwnerSymbol).irComposite {
+            declarationIrBuilder.irComposite {
               for (param in lambdaParamsWithBlockArgument) {
                 val newArgumentValue = param.value.lastElement() as IrExpression
                 accumulateStatementsExceptLast(param.value).forEach { +it }
@@ -217,7 +293,7 @@ class LambdaReturnInlinerIrGenerationExtension(
       }
     })
     moduleFragment.lowerWith(object :
-      IrFileTransformerVoidWithContext() {
+      IrFileTransformerVoidWithContext(pluginContext) {
       override fun visitFunctionNew(declaration: IrFunction): IrStatement {
         tempsToAdd[declaration] = tempsToAdd[declaration] ?: mutableListOf()
         return super.visitFunctionNew(declaration)
@@ -228,19 +304,13 @@ class LambdaReturnInlinerIrGenerationExtension(
           declaration.transformChildrenVoid(object : IrElementTransformerVoid() {
             override fun visitFunctionExpression(expression: IrFunctionExpression): IrExpression {
               super.visitFunctionExpression(expression)
-              return DeclarationIrBuilder(
-                pluginContext,
-                currentScope!!.scope.scopeOwnerSymbol
-              ).irBlock { +irNull() }
+              return /*expression*/ declarationIrBuilder.irBlock { +irNull() }
             }
           })
         }
         return if (declaration.origin == IrDeclarationOrigin.IR_TEMPORARY_VARIABLE) {
           super.visitVariable(declaration)
-          DeclarationIrBuilder(
-            pluginContext,
-            currentScope!!.scope.scopeOwnerSymbol
-          ).irBlock {
+          declarationIrBuilder.irBlock {
             tempsToAdd[allScopes.first { it.irElement is IrFunction }.irElement.cast()]?.add(declaration)
             declaration.initializer?.let {
               +irSet(declaration.symbol, it)
@@ -251,7 +321,7 @@ class LambdaReturnInlinerIrGenerationExtension(
       }
     })
     moduleFragment.lowerWith(object :
-      IrFileTransformerVoidWithContext() {
+      IrFileTransformerVoidWithContext(pluginContext) {
       /*
       override fun visitVariable(declaration: IrVariable): IrStatement {
         return if (declaration.origin == IrDeclarationOrigin.IR_TEMPORARY_VARIABLE && declaration.type.isFunctionTypeOrSubtype()) DeclarationIrBuilder(
@@ -282,13 +352,70 @@ class LambdaReturnInlinerIrGenerationExtension(
 
 
 class InlineHigherOrderFunctionsAndVariablesTransformer(
-  private val context: IrPluginContext
-) : IrFileTransformerVoidWithContext() {
+  context: IrPluginContext
+) : IrFileTransformerVoidWithContext(context) {
 
   private val varMap: MutableMap<IrVariable, IrExpression> = mutableMapOf()
   override fun visitVariable(declaration: IrVariable): IrStatement {
     if (declaration.type.isFunctionTypeOrSubtype()) declaration.initializer?.let { varMap.put(declaration, it) }
     return super.visitVariable(declaration)
+  }
+
+  override fun visitTypeOperator(expression: IrTypeOperatorCall): IrExpression {
+    val argument = expression.argument
+    val initializer = argument.safeAs<IrGetValue>()?.symbol?.owner?.safeAs<IrVariable>()?.initializer
+    if ((argument is IrGetValue && varMap[argument.symbol.owner.safeAs()] != null && initializer is IrWhenWithMapper) || argument is IrWhenWithMapper) {
+      with(declarationIrBuilder) {
+        val irWhenWithMapper: IrWhenWithMapper = when (argument) {
+          is IrGetValue -> initializer.cast()
+          is IrWhenWithMapper -> argument
+          else -> throw IllegalStateException() // literally will never happen
+        }
+        val elseBranch: IrElseBranch
+        val newMapper: MutableList<IrExpression?> = ArrayList(irWhenWithMapper.mapper.size)
+        when (val operator = expression.operator) {
+          CAST, IMPLICIT_CAST, IMPLICIT_DYNAMIC_CAST, REINTERPRET_CAST, SAFE_CAST, IMPLICIT_NOTNULL -> {
+            irWhenWithMapper.mapper.forEachIndexed { index, value ->
+              newMapper[index] = value?.takeIf { it.type.isSubtypeOf(expression.typeOperand, context.irBuiltIns) }
+            }
+            elseBranch = irElseBranch(
+              when (operator) {
+                SAFE_CAST -> irNull()
+                IMPLICIT_NOTNULL -> irCall(
+                  context.irBuiltIns.checkNotNullSymbol // Throwing an NPE isn't directly exposed, and so instead we "check" if null is not null, therefore always throwing an NPE
+                ).apply {
+                  putTypeArgument(0, context.irBuiltIns.nothingType)
+                  putValueArgument(0, irNull())
+                }
+                else -> irCall(context.irBuiltIns.throwCceSymbol)
+              }
+            )
+          }
+          INSTANCEOF, NOT_INSTANCEOF -> {
+            val valueIfInstance = irBoolean(operator == INSTANCEOF)
+            val valueIfNotInstance: IrExpression = irBoolean(!valueIfInstance.value)
+            irWhenWithMapper.mapper.forEachIndexed { index, value ->
+              newMapper[index] = value?.takeIf { it.type.isSubtypeOf(expression.typeOperand, context.irBuiltIns) }
+                ?.let { valueIfInstance }
+            }
+            elseBranch = irElseBranch(valueIfNotInstance)
+          }
+          else -> {
+            return super.visitTypeOperator(expression)
+          }
+        }
+        return createWhenAccessForLambda(
+          expression.type,
+          irWhenWithMapper.tempInt,
+          newMapper,
+          this@InlineHigherOrderFunctionsAndVariablesTransformer.context,
+          elseBranch
+        )
+
+      }
+    } else {
+      return super.visitTypeOperator(expression)
+    }
   }
 
   override fun visitGetValue(expression: IrGetValue): IrExpression {
@@ -297,10 +424,7 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
         val getTemps = mutableListOf<IrValueDeclaration>()
         val setTemps = mutableListOf<IrValueDeclaration>()
         val result = expression.symbol.owner.safeAs<IrVariable>()?.initializer?.let { initializer ->
-          DeclarationIrBuilder(
-            context,
-            currentScope!!.scope.scopeOwnerSymbol
-          ).irComposite {
+          declarationIrBuilder.irComposite {
             +(initializer.lastElement())
               .apply {
                 transform(object : IrElementTransformerVoid() {
@@ -342,14 +466,14 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
     return super.visitGetValue(expression)
   }
 
-  override fun visitCall(expression: IrCall): IrExpression {
-    return super.visitCall(expression)
-  }
 
   val inlinedFunctionAccesses = mutableListOf<IrExpression>()
 
-  @OptIn(ExperimentalStdlibApi::class)
+
+  @OptIn(ExperimentalStdlibApi::class, ObsoleteDescriptorBasedAPI::class)
   override fun visitFunctionAccess(expression: IrFunctionAccessExpression): IrExpression {
+    if (expression.symbol.descriptor.isContractCallDescriptor())
+      return declarationIrBuilder.irUnit() // Just don't bother at all with any contract call
     val result = run {
       if (expression in inlinedFunctionAccesses) return@run expression
       var returnExpression: IrExpression = expression
@@ -361,16 +485,16 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
           for (i in 0 until expression.valueArgumentsCount) add(expression.getValueArgument(i))
         }
       val paramsNeedInlining = allParams.filter {
-        it?.type?.isFunctionTypeOrSubtype() ?: false
+        (it?.type?.isFunctionTypeOrSubtype() ?: false)
       }.any {
         val index = allParams.indexOf(it)
         index < 2 || originalFunction.valueParameters[index - 2].type.let { type -> type is IrDynamicType || type.isNullable() }
       }
 
-      if (/*originalFunction.isInline &&*/ (paramsNeedInlining || expression.type.isFunctionTypeOrSubtype())) {
+      if (originalFunction.isInline && (paramsNeedInlining || expression.type.isFunctionTypeOrSubtype())) {
         val mapper = mutableListOf<IrExpression>()
         returnExpression =
-          DeclarationIrBuilder(context, currentScope!!.scope.scopeOwnerSymbol).irBlock {
+          declarationIrBuilder.irBlock {
             at(expression)
             val inlinedVersion = inline(
               expression,
@@ -399,16 +523,39 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
               })*/
                   originalType = it.type
                   it.type = context.irBuiltIns.intType
-                  val returnExp = it.safeAs<IrReturnableBlock>()?.statements?.last().safeAs<IrReturn>()
-                  returnExp?.let {
-                    returnExp.value = irInt(mapper.size).also {
-                      mapper.add(returnExp.value)
-                      accumulateStatementsExceptLast(returnExp.value).forEach { initStep ->
-                        +initStep
-                        initStep.patchDeclarationParents(parent)
+                  if (false) {
+                    val returnExp = it.safeAs<IrReturnableBlock>()?.statements?.last().safeAs<IrReturn>()
+                    returnExp?.let {
+                      returnExp.value = irInt(mapper.size).also {
+                        mapper.add(returnExp.value.lastElement().cast())
+                        accumulateStatementsExceptLast(returnExp.value).forEach { initStep ->
+                          +initStep
+                          initStep.patchDeclarationParents(parent)
+                        }
                       }
+                      returnExp.type = context.irBuiltIns.intType
                     }
-                    returnExp.type = context.irBuiltIns.intType
+                  } else {
+                    it.safeAs<IrReturnableBlock>()?.let {
+                      @OptIn(ObsoleteDescriptorBasedAPI::class)
+                      @Suppress("NestedLambdaShadowedImplicitParameter") //Intentional
+                      it.transformChildrenVoid(object : IrElementTransformerVoid() {
+
+                        override fun visitReturn(expression: IrReturn): IrExpression {
+                          if (expression.returnTargetSymbol != it.symbol)
+                            return super.visitReturn(expression)
+                          expression.value.type = context.irBuiltIns.intType
+                          expression.value.replaceLastElementAndIterateBranches({ replacer, irStatement ->
+                            expression.value = replacer(irStatement).cast()
+                          }) {
+                            val lambdaNumber = mapper.size
+                            mapper.add(it.cast())
+                            irInt(lambdaNumber)
+                          }
+                          return super.visitReturn(expression)
+                        }
+                      })
+                    }
                   }
                 }
               })
@@ -426,8 +573,10 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
             inlinedFunctionAccesses.add(inlinedVersion)
           }
       }
+      else if(expression.type == context.irBuiltIns.booleanType && (originalFunction.symbol == context.irBuiltIns.eqeqSymbol || originalFunction.symbol == context.irBuiltIns.eqeqeqSymbol) )
       return@run returnExpression
     }
+
     super.visitExpression(result)
     return result
   }
@@ -437,30 +586,30 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
 private fun IrBuilderWithScope.createWhenAccessForLambda(
   originalType: IrType,
   tempInt: IrVariable,
-  mapper: MutableList<IrExpression>,
+  mapper: List<IrExpression?>,
   context: IrPluginContext,
+  elseBranch: IrElseBranch = irElseBranch(irCall(context.irBuiltIns.noWhenBranchMatchedExceptionSymbol))
 ): IrExpression {
-  if (!originalType.isFunctionTypeOrSubtype())
-    return irWhen(originalType, buildList {
-      mapper.forEachIndexed { index, irExpression ->
+  fun fallBackWhenImpl() = irWhenWithMapper(originalType, tempInt, mapper, buildList {
+    mapper.forEachIndexed { index, irExpression ->
+      if (irExpression != null) {
         add(irBranch(irEquals(irGet(tempInt), irInt(index)),
           irComposite { +irExpression }
         ))
       }
-      add(irElseBranch(irCall(context.irBuiltIns.noWhenBranchMatchedExceptionSymbol)))
-    })
+    }
+    add(elseBranch)
+  })
+  if (!originalType.isFunctionTypeOrSubtype())
+    return fallBackWhenImpl()
+
+  //TODO: figure out how to correctly handle lambdas of different arities
   val originalFun =
-    mapper.firstOrNull()?.lastElement().safeAs<IrFunctionExpression>()?.function ?: return irWhen(
-      originalType,
-      buildList {
-        mapper.forEachIndexed { index, irExpression ->
-          add(irBranch(irEquals(irGet(tempInt), irInt(index)),
-            irComposite { +irExpression }
-          ))
-        }
-        add(irElseBranch(irCall(context.irBuiltIns.noWhenBranchMatchedExceptionSymbol)))
-      })
-  //val originalFun: IrFunction = TODO()
+    mapper.filterIsInstance<IrFunctionExpression>().takeIf { functionExpressions ->
+      functionExpressions.firstOrNull()?.let { firstFunctionExpression ->
+        functionExpressions.all { functionExpression -> functionExpression.function.valueParameters.size == firstFunctionExpression.function.valueParameters.size }
+      } == true
+    }?.first()?.function ?: return fallBackWhenImpl()
   val createdFunction = context.irFactory.buildFun {
     updateFrom(originalFun)
     name = originalFun.name
@@ -477,38 +626,40 @@ private fun IrBuilderWithScope.createWhenAccessForLambda(
     originalFun.dispatchReceiverParameter?.deepCopyWithSymbols(this)
       .let { dispatchReceiverParameter = it }
     body = DeclarationIrBuilder(this@createWhenAccessForLambda.context, createdFunction.symbol).irBlockBody {
-      +irReturn(irWhen(originalFun.returnType, buildList {
+      +irReturn(irWhenWithMapper(originalFun.returnType, tempInt, mapper, buildList {
         mapper.forEachIndexed { index, irExpression ->
-          add(irBranch(irEquals(irGet(tempInt), irInt(index)),
-            irComposite {
-              +irCall(context.referenceFunctions(kotlinPackageFqn.child(Name.identifier("run")))
-                .first { it.owner.dispatchReceiverParameter == null }).apply {
-                val lambdaReturnType = originalFun.returnType
-                putTypeArgument(0, lambdaReturnType)
-                putValueArgument(
-                  0,
-                  irExpression.lastElement().safeAs<IrFunctionExpression>()?.apply {
-                    type = context.irBuiltIns.function(0).typeWith(lambdaReturnType)
-                    irExpression.patchDeclarationParents(createdFunction)
-                    function.body?.transformChildrenVoid(object : IrElementTransformerVoid() {
-                      override fun visitGetValue(expression: IrGetValue): IrExpression {
-                        function.valueParameters.indexOfOrNull(expression.symbol.owner)?.let {
-                          return irGet(createdFunction.valueParameters[it])
+          if (irExpression != null) {
+            add(irBranch(irEquals(irGet(tempInt), irInt(index)),
+              irComposite {
+                +irCall(context.referenceFunctions(kotlinPackageFqn.child(Name.identifier("run")))
+                  .first { it.owner.dispatchReceiverParameter == null }).apply {
+                  val lambdaReturnType = originalFun.returnType
+                  putTypeArgument(0, lambdaReturnType)
+                  putValueArgument(
+                    0,
+                    irExpression.safeAs<IrFunctionExpression>()?.apply {
+                      type = context.irBuiltIns.function(0).typeWith(lambdaReturnType)
+                      irExpression.patchDeclarationParents(createdFunction)
+                      function.body?.transformChildrenVoid(object : IrElementTransformerVoid() {
+                        override fun visitGetValue(expression: IrGetValue): IrExpression {
+                          function.valueParameters.indexOfOrNull(expression.symbol.owner)?.let {
+                            return irGet(createdFunction.valueParameters[it])
+                          }
+                          return super.visitGetValue(expression)
                         }
-                        return super.visitGetValue(expression)
-                      }
-                    })/*
-                    accumulateStatementsExceptLast(irExpression).forEach {
-                      +it
-                      it.patchDeclarationParents(createdFunction)
-                    }*/
-                    function.valueParameters = listOf()
-                  })
+                      })/*
+                              accumulateStatementsExceptLast(irExpression).forEach {
+                                +it
+                                it.patchDeclarationParents(createdFunction)
+                              }*/
+                      function.valueParameters = listOf()
+                    })
+                }
               }
-            }
-          ))
+            ))
+          }
         }
-        add(irElseBranch(irCall(context.irBuiltIns.noWhenBranchMatchedExceptionSymbol)))
+        add(elseBranch)
       }))
     }
   }
@@ -518,7 +669,7 @@ private fun IrBuilderWithScope.createWhenAccessForLambda(
     originalType,
     createdFunction,
     IrStatementOrigin.LAMBDA
-  ).also { it }
+  )
 }
 
 tailrec fun IrStatement.lastElement(): IrStatement =
@@ -538,7 +689,8 @@ fun IrModuleFragment.lowerWith(pass: FileLoweringPass) = pass.lower(this)
 /**
  * Returns a list containing the original element and then the given [collection].
  */
-public operator fun <T> T.plus(collection: Collection<T>): List<T> {
+@Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE")
+operator fun <T> @kotlin.internal.Exact T.plus(collection: Collection<T>): List<T> {
   val result = ArrayList<T>(collection.size + 1)
   result.add(this)
   result.addAll(collection)
@@ -551,3 +703,122 @@ fun IrTypeParameter.createSimpleType(
   annotations: List<IrConstructorCall> = emptyList(),
   abbreviation: IrTypeAbbreviation? = null
 ): IrSimpleType = IrSimpleTypeImpl(symbol, hasQuestionMark, arguments, annotations, abbreviation)
+
+fun IrStatement.replaceLastElementAndIterateBranches(
+  onThisNotContainer: (replacer: (IrStatement) -> IrStatement, IrStatement) -> Unit,
+  replacer: (IrStatement) -> IrStatement
+): IrStatement {
+  val value = replaceLastElement(onThisNotContainer) {
+    if (it is IrWhen) {
+      it.branches.forEach { branch ->
+        branch.result.replaceLastElementAndIterateBranches({ _, irStatement ->
+          branch.result = replacer(
+            irStatement
+          ).cast()
+        }, replacer)
+      }
+      it
+    } else replacer(it)
+  }
+  return value
+}
+
+@OptIn(ExperimentalContracts::class)
+inline fun IrStatement.replaceLastElement(
+  onThisNotContainer: (replacer: (IrStatement) -> IrStatement, IrStatement) -> Unit,
+  noinline replacer: (IrStatement) -> IrStatement
+): IrStatement {
+  contract {
+    callsInPlace(replacer, InvocationKind.EXACTLY_ONCE)
+  }
+  return if (this is IrContainerExpression) replaceLastElement(replacer) else this.apply {
+    onThisNotContainer(
+      replacer,
+      this
+    )
+  }
+}
+
+@OptIn(ExperimentalContracts::class)
+tailrec fun IrContainerExpression.replaceLastElement(replacer: (IrStatement) -> IrStatement): IrStatement {
+  contract {
+    callsInPlace(replacer, InvocationKind.EXACTLY_ONCE)
+  }
+  val lastElement = statements.last()
+  if (lastElement !is IrContainerExpression) statements[statements.size - 1] = replacer(lastElement)
+  return if (lastElement !is IrContainerExpression) lastElement else lastElement.replaceLastElement(replacer)
+}
+
+
+@OptIn(ExperimentalContracts::class)
+inline fun <reified T : Any> Any?.safeAs(): T? {
+  // I took this from org.jetbrains.kotlin.utils.addToStdlib and added the contract to allow for safecasting when a null
+  // check is done on the returned value of this function
+  contract {
+    returnsNotNull() implies (this@safeAs is T)
+  }
+  return this as? T
+}
+
+fun jvmResolveLibraries(
+  libraries: List<String>,
+  absoluteLibraries: List<String>,
+  logger: Logger
+): KotlinLibraryResolveResult {
+  val unresolvedLibraries =
+    libraries.map { UnresolvedLibrary(it, null) } + absoluteLibraries.map { UnresolvedLibrary(it, null) }
+  val libraryAbsolutePaths = libraries.map { org.jetbrains.kotlin.konan.file.File(it).absolutePath } + absoluteLibraries
+  // Configure the resolver to only work with absolute paths for now.
+  val libraryResolver = JvmLibraryResolver(
+    repositories = emptyList(),
+    directLibs = libraryAbsolutePaths,
+    distributionKlib = null,
+    localKotlinDir = null,
+    skipCurrentDir = false,
+    logger = logger
+  ).libraryResolver()
+  val resolvedLibraries =
+    libraryResolver.resolveWithDependencies(
+      unresolvedLibraries = unresolvedLibraries,
+      noStdLib = false,
+      noDefaultLibs = false,
+      noEndorsedLibs = false
+    )
+  return resolvedLibraries
+}
+
+fun IrBuilderWithScope.irWhenWithMapper(
+  type: IrType,
+  tempInt: IrVariable,
+  mapper: List<IrExpression?>,
+  branches: List<IrBranch>
+) =
+  IrWhenWithMapperImpl(startOffset, endOffset, type, tempInt, mapper, null, branches)
+
+class IrWhenWithMapperImpl(
+  override val startOffset: Int,
+  override val endOffset: Int,
+  override var type: IrType,
+  override val tempInt: IrVariable,
+  override val mapper: List<IrExpression?>,
+  override val origin: IrStatementOrigin? = null,
+) : IrWhenWithMapper() {
+  constructor(
+    startOffset: Int,
+    endOffset: Int,
+    type: IrType,
+    tempInt: IrVariable,
+    mapper: List<IrExpression?>,
+    origin: IrStatementOrigin?,
+    branches: List<IrBranch>
+  ) : this(startOffset, endOffset, type, tempInt, mapper, origin) {
+    this.branches.addAll(branches)
+  }
+
+  override val branches: MutableList<IrBranch> = ArrayList()
+}
+
+abstract class IrWhenWithMapper : IrWhen() {
+  abstract val mapper: List<IrExpression?>
+  abstract val tempInt: IrVariable
+}
