@@ -7,22 +7,27 @@ interface FunctorIn<in KA : K, out A, K> {
   fun <B, KB : K> KA.fmap(fo: FunctorOut<B, KB, K>, mapper: (A) -> B): KB
 }
 
-@LambdaBacked interface FunctorOut<in B, out KB : K, K> {
+@LambdaBacked
+interface FunctorOut<in B, out KB : K, K> {
   fun K.toKB(): KB // this is just used for type safety and to push unsafe conversions to the XFunctorOutImpl
   fun @UnsafeVariance KB.toK(): K
 }
 
-@LambdaBacked interface FunctorBoth<in KA : K, out A, in B, out KB : K, K> : FunctorIn<KA, A, K>,
+@LambdaBacked
+interface FunctorBoth<in KA : K, out A, in B, out KB : K, K> : FunctorIn<KA, A, K>,
   FunctorOut<B, KB, K>
 
-@LambdaBacked interface ApplicativeIn<in KA : K, out A, K> : FunctorIn<KA, A, K> {
+@LambdaBacked
+interface ApplicativeIn<in KA : K, out A, K> : FunctorIn<KA, A, K> {
 }
 
-@LambdaBacked interface ApplicativeOut<in B, out KB : K, K> : FunctorOut<B, KB, K> {
+@LambdaBacked
+interface ApplicativeOut<in B, out KB : K, K> : FunctorOut<B, KB, K> {
   fun pure(b: B): KB
 }
 
-@LambdaBacked interface ApplicativeBoth<in KA : K, out A, in B, out KB : K, KFUNC : K, K> : ApplicativeIn<KA, A, K>,
+@LambdaBacked
+interface ApplicativeBoth<in KA : K, out A, in B, out KB : K, KFUNC : K, K> : ApplicativeIn<KA, A, K>,
   ApplicativeOut<B, KB, K>, FunctorBoth<KA, A, B, KB, K> {
   fun KA.app(applied: KFUNC): KB
   fun pureFunc(b: (A) -> B): KFUNC = pure(b as B) as KFUNC
@@ -31,25 +36,31 @@ interface FunctorIn<in KA : K, out A, K> {
     this.fmap(this@ApplicativeBoth, mapper as (A) -> B) as KFUNC
 }
 
-@LambdaBacked interface MonadIn<in KA : K, out A, K> : ApplicativeIn<KA, A, K> {
+@LambdaBacked
+interface MonadIn<in KA : K, out A, K> : ApplicativeIn<KA, A, K> {
   fun <B, KB : K> KA.flatMap(fo: FunctorOut<B, KB, K>, mapper: (A) -> KB): KB
 }
 
-@LambdaBacked interface MonadOut<in B, out KB : K, K> : ApplicativeOut<B, KB, K>
+@LambdaBacked
+interface MonadOut<in B, out KB : K, K> : ApplicativeOut<B, KB, K>
 
-@LambdaBacked interface MonadBoth<in KA : K, out A, in B, out KB : K, KFUNC : K, K> : MonadIn<KA, A, K>, MonadOut<B, KB, K>,
+@LambdaBacked
+interface MonadBoth<in KA : K, out A, in B, out KB : K, KFUNC : K, K> : MonadIn<KA, A, K>, MonadOut<B, KB, K>,
   ApplicativeBoth<KA, A, B, KB, KFUNC, K> {
   fun <B> KA.flatMapFunc(fo: FunctorOut<B, K, K>, mapper: (A) -> (KFUNC)): KFUNC =
     this.flatMap<B, K>(fo, mapper) as KFUNC
 }
 
-@LambdaBacked interface OptionMonadIn<out A> : MonadIn<Option<@UnsafeVariance A>, A, Option<*>>
+@LambdaBacked
+interface OptionMonadIn<out A> : MonadIn<Option<@UnsafeVariance A>, A, Option<*>>
 
 // For a class with an out type param, a K value using Any? should be used just like below.
 // For a class with an in type param, a K value using Nothing should be used.
 // For an invariant class, use a star projection
-@LambdaBacked interface OptionMonadOut<in B> : MonadOut<B, Option<@UnsafeVariance B>, Option<*>>
-@LambdaBacked interface OptionMonadBoth<out A, in B> : OptionMonadIn<A>, OptionMonadOut<B>,
+@LambdaBacked
+interface OptionMonadOut<in B> : MonadOut<B, Option<@UnsafeVariance B>, Option<*>>
+@LambdaBacked
+interface OptionMonadBoth<out A, in B> : OptionMonadIn<A>, OptionMonadOut<B>,
   MonadBoth<Option<@UnsafeVariance A>, A, B, Option<@UnsafeVariance B>, Option<(@UnsafeVariance A) -> @UnsafeVariance B>, Option<*>>
 
 // Can also use an inline class here possibly but whatever
@@ -70,7 +81,8 @@ sealed class Option<A> {
 
 data class Some<A>(val a: A) : Option<A>()
 object None : Option<Nothing>()
-@LambdaBacked object OptionMonadBothImpl : OptionMonadBoth<Any?, Any?> {
+@LambdaBacked
+object OptionMonadBothImpl : OptionMonadBoth<Any?, Any?> {
   override fun Option<*>.toKB(): Option<Any?> {
     return this as Option<Any?>
   }
@@ -92,17 +104,17 @@ object None : Option<Nothing>()
   override fun Option<Any?>.app(
     applied: Option<(Any?) -> Any?>
   ): Option<Any?> {
-      return when (applied) {
-        is Some -> when (this@app) {
-          is Some -> {
-            val appliedFunction = applied.a
-            val passedInValue = this@app.a
-            Some(appliedFunction(passedInValue))
-          }
-          else -> None
+    return when (applied) {
+      is Some -> when (this@app) {
+        is Some -> {
+          val appliedFunction = applied.a
+          val passedInValue = this@app.a
+          Some(appliedFunction(passedInValue))
         }
         else -> None
-      }.toKB()
+      }
+      else -> None
+    }.toKB()
   }
 
   override fun <B, KB : Option<*>> Option<Any?>.flatMap(fo: FunctorOut<B, KB, Option<*>>, mapper: (Any?) -> KB): KB {

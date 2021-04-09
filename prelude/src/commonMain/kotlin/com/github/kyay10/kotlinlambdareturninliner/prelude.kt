@@ -12,5 +12,6 @@ import kotlin.jvm.JvmSynthetic
 inline fun <R> inlineInvoke(block: () -> R): R {
   return block()
 }
+
 @Target(AnnotationTarget.CLASS)
 annotation class LambdaBacked

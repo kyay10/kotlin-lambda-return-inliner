@@ -69,5 +69,8 @@ pluginBundle {
       version = "0.1.1-SNAPSHOT"
     }
   }
-
+}
+val compileKotlin: KotlinCompile by tasks
+compileKotlin.kotlinOptions {
+    freeCompilerArgs = listOf("-Xinline-classes")
 }

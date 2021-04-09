@@ -1,3 +1,5 @@
+@file:Suppress("UnstableApiUsage")
+
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
@@ -7,7 +9,6 @@ plugins {
 }
 
 dependencies {
-  implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.2.0")
   implementation("org.ow2.asm:asm:9.1")
   compileOnly("org.jetbrains.kotlin:kotlin-compiler")
 
@@ -30,6 +31,7 @@ tasks.register<Sync>("syncSource") {
 
 tasks.withType<KotlinCompile> {
   kotlinOptions.jvmTarget = "1.8"
+  kotlinOptions.freeCompilerArgs += "-Xopt-in=kotlin.RequiresOptIn"
 }
 
 java {

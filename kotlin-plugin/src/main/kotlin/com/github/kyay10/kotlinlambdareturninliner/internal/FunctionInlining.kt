@@ -9,7 +9,8 @@ package com.github.kyay10.kotlinlambdareturninliner.internal
  */
 
 
-import org.jetbrains.kotlin.backend.common.*
+import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
+import org.jetbrains.kotlin.backend.common.ScopeWithIr
 import org.jetbrains.kotlin.backend.common.extensions.IrPluginContext
 import org.jetbrains.kotlin.backend.common.ir.Symbols
 import org.jetbrains.kotlin.backend.common.ir.getNewWrappedDescriptor
@@ -26,9 +27,14 @@ import org.jetbrains.kotlin.ir.builders.irReturn
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
-import org.jetbrains.kotlin.ir.symbols.*
+import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
+import org.jetbrains.kotlin.ir.symbols.IrSymbol
+import org.jetbrains.kotlin.ir.symbols.IrValueSymbol
 import org.jetbrains.kotlin.ir.symbols.impl.IrReturnableBlockSymbolImpl
-import org.jetbrains.kotlin.ir.types.*
+import org.jetbrains.kotlin.ir.types.IrSimpleType
+import org.jetbrains.kotlin.ir.types.IrType
+import org.jetbrains.kotlin.ir.types.isNullable
+import org.jetbrains.kotlin.ir.types.typeOrNull
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
@@ -571,14 +577,4 @@ fun IrElementTransformerVoidWithContext.inline(
 
   val inliner = Inliner(this, expression, actualCallee, currentScope, parent, context)
   return inliner.inline()//.transform(ReturnableBlockTransformer(context, currentScope.scope.scopeOwnerSymbol), null)
-}
-
-tailrec fun accumulateStatementsExceptLast(
-  statement: IrStatement,
-  list: MutableList<IrStatement> = mutableListOf()
-): List<IrStatement> {
-  return if (statement !is IrContainerExpression) list else {
-    list.addAll(statement.statements.dropLast(1))
-    accumulateStatementsExceptLast(statement.statements.last(), list)
-  }
 }

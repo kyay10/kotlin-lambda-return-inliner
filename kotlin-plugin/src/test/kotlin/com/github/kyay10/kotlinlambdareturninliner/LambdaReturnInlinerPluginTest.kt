@@ -62,7 +62,7 @@ class LambdaReturnInlinerPluginTest {
 
   @Test
   fun `Scoping Functions and Nulls`() {
-    val result = KotlinJsCompilation().apply {
+    KotlinJsCompilation().apply {
       irProduceJs = true
       sources = sampleFiles
       this.irOnly = true
@@ -114,7 +114,11 @@ private fun compileSources(
   messageOutputStream = System.out // see diagnostics in real time
   verbose = true
   kotlincArguments = kotlincArguments + "-Xallow-kotlin-package"
-  pluginOptions = pluginOptions + PluginOption(BuildConfig.KOTLIN_PLUGIN_ID, LambdaReturnInlinerCommandLineProcessor.generatedSourcesDir.toString(), "${BuildConfig.SAMPLE_GENERATED_SOURCES_DIR}")
+  pluginOptions = pluginOptions + PluginOption(
+    BuildConfig.KOTLIN_PLUGIN_ID,
+    LambdaReturnInlinerCommandLineProcessor.generatedSourcesDir.toString(),
+    BuildConfig.SAMPLE_GENERATED_SOURCES_DIR
+  )
 }.compile()
 
 fun compile(

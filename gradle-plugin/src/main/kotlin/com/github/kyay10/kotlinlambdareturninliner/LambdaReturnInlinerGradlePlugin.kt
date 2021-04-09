@@ -15,6 +15,8 @@
  * limitations under the License.
  */
 
+@file:Suppress("unused")
+
 package com.github.kyay10.kotlinlambdareturninliner
 
 
@@ -61,7 +63,10 @@ class LambdaReturnInlinerGradlePlugin : KotlinCompilerPluginSupportPlugin {
 
     return project.provider {
       listOf(
-        SubpluginOption(key = "generatedSourcesDir", value = extension.generatedSourcesDir.dir(sourceSetName).asFile.path),
+        SubpluginOption(
+          key = "generatedSourcesDir",
+          value = extension.generatedSourcesDir.dir(sourceSetName).asFile.path
+        ),
       )
     }
   }

@@ -72,6 +72,7 @@ operator fun <T> ListInTheProcessOfBuilding<T>.plus(other: ListInTheProcessOfBui
     addTo(it)
     other.addTo(it)
   }
+
 operator fun <T> ListInTheProcessOfBuilding<T>.plus(other: List<T>): ListInTheProcessOfBuilding<T> =
   ListInTheProcessOfBuilding(size + other.size) {
     addTo(it)
@@ -86,10 +87,12 @@ fun main() {
   val listD = listOf("test", "best", "nest")
   val listE = listOf('x', 'y')
   // Note that you lose non-local returns here because of noinline.
-  val firstLetters: List<Char> = listA.map { it.first() } + listB.map { it.first() } + listC.map { it.first() } + listD.map { it.first() } + listE
+  val firstLetters: List<Char> =
+    listA.map { it.first() } + listB.map { it.first() } + listC.map { it.first() } + listD.map { it.first() } + listE
   println(firstLetters)
 }
 
 /* noinline is needed just to get the code compiling, but hopefully with the compiler plugin that modifier won't be needed. I haven't figured out how to suppress that error though yet lol */
-inline fun <T, R> List<T>.map(noinline transform: (T) -> R): ListInTheProcessOfBuilding<R> = ListInTheProcessOfBuilding(size) { mapTo(it, transform) }
+inline fun <T, R> List<T>.map(noinline transform: (T) -> R): ListInTheProcessOfBuilding<R> =
+  ListInTheProcessOfBuilding(size) { mapTo(it, transform) }
 

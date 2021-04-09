@@ -10,7 +10,7 @@ import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
 
 open class IrFileTransformerVoidWithContext(val context: IrPluginContext) : IrElementTransformerVoidWithContext(),
-    FileLoweringPass {
+  FileLoweringPass {
   protected lateinit var file: IrFile
   override fun lower(irFile: IrFile) {
     file = irFile
@@ -18,14 +18,11 @@ open class IrFileTransformerVoidWithContext(val context: IrPluginContext) : IrEl
   }
 
   val declarationIrBuilder: DeclarationIrBuilder
-    get() = DeclarationIrBuilder(
-        context,
-        currentScope!!.scope.scopeOwnerSymbol
-    )
+    get() = declarationIrBuilder()
 
   fun declarationIrBuilder(
-      generatorContext: IrGeneratorContext = context,
-      symbol: IrSymbol = currentScope!!.scope.scopeOwnerSymbol,
-      startOffset: Int = UNDEFINED_OFFSET, endOffset: Int = UNDEFINED_OFFSET
+    generatorContext: IrGeneratorContext = context,
+    symbol: IrSymbol = currentScope!!.scope.scopeOwnerSymbol,
+    startOffset: Int = UNDEFINED_OFFSET, endOffset: Int = UNDEFINED_OFFSET
   ) = DeclarationIrBuilder(generatorContext, symbol, startOffset, endOffset)
 }

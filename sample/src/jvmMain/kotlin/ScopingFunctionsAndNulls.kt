@@ -33,16 +33,16 @@ fun main() {
   }
   //Checking to see if direct invocation and nullable values inside a scoping function are both optimised
   lambdaOrNullNormal(true, myFun).let {
-    if(it == null) println("null1") else println(it("null1"))
+    if (it == null) println("null1") else println(it("null1"))
   }
   lambdaOrNullNormal(false, myFun).run {
-    if(this == null) println("null2") else println(this("null2"))
+    if (this == null) println("null2") else println(this("null2"))
   }
   lambdaOrNullGeneric(true, myFun).apply {
-    if(this == null) println("null3") else println(this("null3"))
+    if (this == null) println("null3") else println(this("null3"))
   }
   lambdaOrNullGeneric(false, myFun).also {
-    if(it == null) println("null4") else println(it("null4"))
+    if (it == null) println("null4") else println(it("null4"))
   }
 }
 

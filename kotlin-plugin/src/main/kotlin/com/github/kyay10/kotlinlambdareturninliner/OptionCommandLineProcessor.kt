@@ -13,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+@file:Suppress("unused")
+
 package com.github.kyay10.kotlinlambdareturninliner
 
 import org.jetbrains.kotlin.compiler.plugin.AbstractCliOption
@@ -22,7 +24,8 @@ import org.jetbrains.kotlin.config.CompilerConfigurationKey
 import kotlin.reflect.KProperty
 
 open class OptionCommandLineProcessor(override val pluginId: String) : CommandLineProcessor {
-  @PublishedApi internal val _pluginOptions: MutableCollection<TransformableCliOption<*>> = mutableListOf()
+  @PublishedApi
+  internal val _pluginOptions: MutableCollection<TransformableCliOption<*>> = mutableListOf()
   override val pluginOptions: Collection<TransformableCliOption<*>> = _pluginOptions
 
   inline fun <T : Any> option(
@@ -71,14 +74,15 @@ open class OptionCommandLineProcessor(override val pluginId: String) : CommandLi
 }
 
 abstract class TransformableCliOption<T : Any>(
-  override val optionName: String,
+  name: String,
   override val valueDescription: String,
   override val description: String,
   override val required: Boolean = true,
   override val allowMultipleOccurrences: Boolean = false
 ) : AbstractCliOption {
+  override val optionName: String = name
   abstract fun transform(value: String): T
-  val configurationKey: CompilerConfigurationKey<T> = CompilerConfigurationKey<T>(optionName)
+  val configurationKey: CompilerConfigurationKey<T> = CompilerConfigurationKey<T>(name)
 
   operator fun getValue(thisRef: Any?, property: KProperty<*>): CompilerConfigurationKey<T> = configurationKey
 }

@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
@@ -45,7 +44,12 @@ internal annotation class OnlyInputTypes
 /**
  * Specifies that this function should not be called directly without inlining
  */
-@Target(AnnotationTarget.FUNCTION, AnnotationTarget.PROPERTY, AnnotationTarget.PROPERTY_GETTER, AnnotationTarget.PROPERTY_SETTER)
+@Target(
+  AnnotationTarget.FUNCTION,
+  AnnotationTarget.PROPERTY,
+  AnnotationTarget.PROPERTY_GETTER,
+  AnnotationTarget.PROPERTY_SETTER
+)
 @Retention(AnnotationRetention.BINARY)
 internal annotation class InlineOnly
 
@@ -83,7 +87,13 @@ internal annotation class AccessibleLateinitPropertyLiteral
  *
  * This annotation is erased at compile time; its arguments are stored in a more compact form in the Kotlin metadata.
  */
-@Target(AnnotationTarget.CLASS, AnnotationTarget.FUNCTION, AnnotationTarget.PROPERTY, AnnotationTarget.CONSTRUCTOR, AnnotationTarget.TYPEALIAS)
+@Target(
+  AnnotationTarget.CLASS,
+  AnnotationTarget.FUNCTION,
+  AnnotationTarget.PROPERTY,
+  AnnotationTarget.CONSTRUCTOR,
+  AnnotationTarget.TYPEALIAS
+)
 @Retention(AnnotationRetention.SOURCE)
 @Repeatable
 @SinceKotlin("1.2")

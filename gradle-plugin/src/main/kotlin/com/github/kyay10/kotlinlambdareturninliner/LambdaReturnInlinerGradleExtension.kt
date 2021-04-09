@@ -15,6 +15,8 @@
  * limitations under the License.
  */
 
+@file:Suppress("UnstableApiUsage", "unused", "MemberVisibilityCanBePrivate")
+
 package com.github.kyay10.kotlinlambdareturninliner
 
 import org.gradle.api.Project

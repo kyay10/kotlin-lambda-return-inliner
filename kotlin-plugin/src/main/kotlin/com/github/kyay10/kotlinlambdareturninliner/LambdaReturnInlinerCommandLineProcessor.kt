@@ -23,8 +23,14 @@ import java.io.File
 
 @AutoService(CommandLineProcessor::class)
 class LambdaReturnInlinerCommandLineProcessor : CommandLineProcessor by Companion {
-  companion object : OptionCommandLineProcessor(BuildConfig.KOTLIN_PLUGIN_ID){
-    val generatedSourcesDir by option("generatedSourcesDir", "generatedSourcesDir", "The full path to the directory to place all generated .kt files into. Used by this plugin to place shadowed external inline functions just to copy their bodies over", true){
+  companion object : OptionCommandLineProcessor(BuildConfig.KOTLIN_PLUGIN_ID) {
+    val generatedSourcesDir by option(
+      "generatedSourcesDir",
+      "<file-path>",
+      "The full path to the directory to place all generated .kt files into. " +
+        "Used by this plugin to place shadowed external inline functions just to copy their bodies over",
+      true // TODO: Consider making this non-required
+    ) {
       File(it)
     }
   }
