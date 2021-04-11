@@ -20,10 +20,12 @@ import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.parentsWithSelf
 import org.jetbrains.kotlin.resolve.BindingTrace
 import org.jetbrains.kotlin.resolve.calls.callUtil.getResolvedCall
+import org.jetbrains.kotlin.resolve.calls.callUtil.getType
 import org.jetbrains.kotlin.resolve.jvm.extensions.AnalysisHandlerExtension
 import org.jetbrains.kotlin.resolve.multiplatform.isCommonSource
 import org.jetbrains.kotlin.serialization.deserialization.descriptors.DescriptorWithContainerSource
 import org.jetbrains.kotlin.types.isFlexible
+import org.jetbrains.kotlin.types.typeUtil.isTypeParameter
 import org.jetbrains.org.objectweb.asm.Opcodes
 import java.io.File
 
@@ -92,13 +94,20 @@ class LambdaReturnInlinerAnalysisHandler(
           val resolvedDescriptor = resolvedCall?.resultingDescriptor
           // This is the same criteria that the IrExtension has for inlining
           if (resolvedDescriptor?.safeAs<FunctionDescriptor>()?.isInline != true
-            || (!(resolvedCall.valueArguments.any { (key, value) -> (value.arguments.any { it is KtLambdaArgument } || key.declaresDefaultValue()) && ((key.type.isMarkedNullable && key.type.isFunctionTypeOrSubtype) || key.type.isFlexible()) })
+            || (!(resolvedCall.valueArguments.any { (key, value) ->
+              (value.arguments.any {
+                it is KtLambdaArgument || it.getArgumentExpression()
+                  ?.getType(bindingTrace.bindingContext)?.isFunctionTypeOrSubtype == true
+              } || key.declaresDefaultValue()) && ((key.type.isMarkedNullable && key.type.isFunctionTypeOrSubtype) || key.type.isFlexible() || key.type.isTypeParameter() || key.original.type.isFlexible()) || key.original.type.isTypeParameter()
+            })
               && !(listOfNotNull(
               resolvedDescriptor.dispatchReceiverParameter toNotNull resolvedCall.dispatchReceiver,
               resolvedDescriptor.extensionReceiverParameter toNotNull resolvedCall.extensionReceiver
             ).any { (key, value) -> value.type.isFunctionTypeOrSubtype && ((key.type.isFunctionTypeOrSubtype) || key.type.isFlexible()) })
               )
-          ) return
+          ) {
+            return
+          }
           val reader =
             resolvedDescriptor.safeAs<DescriptorWithContainerSource>()?.containerSource?.safeAs<JvmPackagePartSource>()?.knownJvmBinaryClass?.location?.let { it1 ->
               CoreJarFileSystem().findFileByPath(
@@ -133,6 +142,8 @@ class LambdaReturnInlinerAnalysisHandler(
                 })
               }
             }
+            // TODO: member inline functions should be changed to @HidesMembers extension inline functions
+            //  but be careful of needing to specify generics though
             ktFileDeclarations.declarations.forEach { function ->
               if (function is KtNamedFunction && function.hasModifier(KtTokens.INLINE_KEYWORD) && function.nameAsName == resolvedDescriptor.name && function.valueParameters.map { it.nameAsName } == resolvedDescriptor.valueParameters.map { it.name }) {
                 ktFileDeclarations.declarationsToKeep.addAll(function.parentsWithSelf.toList())
