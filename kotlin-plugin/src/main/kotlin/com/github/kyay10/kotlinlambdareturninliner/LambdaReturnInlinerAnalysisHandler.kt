@@ -19,8 +19,6 @@ import org.jetbrains.kotlin.load.kotlin.JvmPackagePartSource
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.parentsWithSelf
 import org.jetbrains.kotlin.resolve.BindingTrace
-import org.jetbrains.kotlin.resolve.calls.callUtil.getResolvedCall
-import org.jetbrains.kotlin.resolve.calls.callUtil.getType
 import org.jetbrains.kotlin.resolve.jvm.extensions.AnalysisHandlerExtension
 import org.jetbrains.kotlin.resolve.multiplatform.isCommonSource
 import org.jetbrains.kotlin.serialization.deserialization.descriptors.DescriptorWithContainerSource
@@ -55,7 +53,7 @@ class LambdaReturnInlinerAnalysisHandler(
     module: ModuleDescriptor,
     bindingTrace: BindingTrace,
     files: Collection<KtFile>
-  ): AnalysisResult? {
+  ): AnalysisResult? = withBindingContext(bindingTrace.bindingContext){
     if (!::allPossibleKtSources.isInitialized) {
       allPossibleKtSources = buildList {
         configuration[JVMConfigurationKeys.MODULES]?.forEach { jvmModule ->
@@ -90,14 +88,14 @@ class LambdaReturnInlinerAnalysisHandler(
       ktFile.acceptChildrenVoid(object : KtRecursiveVisitorVoid() {
         override fun visitCallExpression(expression: KtCallExpression) {
           super.visitCallExpression(expression)
-          val resolvedCall = expression.getResolvedCall(bindingTrace.bindingContext)
+          val resolvedCall = expression.resolvedCall
           val resolvedDescriptor = resolvedCall?.resultingDescriptor
           // This is the same criteria that the IrExtension has for inlining
           if (resolvedDescriptor?.safeAs<FunctionDescriptor>()?.isInline != true
             || (!(resolvedCall.valueArguments.any { (key, value) ->
               (value.arguments.any {
                 it is KtLambdaArgument || it.getArgumentExpression()
-                  ?.getType(bindingTrace.bindingContext)?.isFunctionTypeOrSubtype == true
+                  ?.typeThroughResolvingCall?.isFunctionTypeOrSubtype == true
               } || key.declaresDefaultValue()) && ((key.type.isMarkedNullable && key.type.isFunctionTypeOrSubtype) || key.type.isFlexible() || key.type.isTypeParameter() || key.original.type.isFlexible()) || key.original.type.isTypeParameter()
             })
               && !(listOfNotNull(
