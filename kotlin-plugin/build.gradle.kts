@@ -21,7 +21,9 @@ dependencies {
   // Needed for running tests since the tests inherit out classpath
   api(project(":prelude"))
 
-  testImplementation(kotlin("test-junit"))
+  testImplementation(kotlin("test-junit5"))
+  testImplementation(platform("org.junit:junit-bom:5.7.1"))
+  testImplementation("org.junit.jupiter:junit-jupiter")
   testImplementation("org.jetbrains.kotlin:kotlin-compiler-embeddable")
   testImplementation("com.github.tschuchortdev:kotlin-compile-testing:1.3.4")
 }
@@ -60,4 +62,15 @@ publishing {
       from(components["java"])
     }
   }
+}
+tasks.withType<Test> {
+  useJUnitPlatform()
+  testLogging {
+    events("passed", "skipped", "failed")
+  }
+}
+
+val compileKotlin: KotlinCompile by tasks
+compileKotlin.kotlinOptions {
+    freeCompilerArgs = listOf("-Xinline-classes")
 }

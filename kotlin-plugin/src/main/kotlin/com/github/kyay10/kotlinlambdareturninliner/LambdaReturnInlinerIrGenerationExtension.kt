@@ -43,8 +43,10 @@ import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.resolve.jvm.annotations.JVM_SYNTHETIC_ANNOTATION_FQ_NAME
+import org.jetbrains.kotlin.types.typeUtil.isNothingOrNullableNothing
 import org.jetbrains.kotlin.util.OperatorNameConventions
 import org.jetbrains.kotlin.utils.addToStdlib.cast
+import org.jetbrains.kotlin.utils.addToStdlib.firstIsInstanceOrNull
 
 val INLINE_INVOKE_FQNAME = FqName("com.github.kyay10.kotlinlambdareturninliner.inlineInvoke")
 
@@ -55,43 +57,25 @@ class LambdaReturnInlinerIrGenerationExtension(
 ) : IrGenerationExtension {
   @OptIn(ExperimentalStdlibApi::class, ObsoleteDescriptorBasedAPI::class)
   override fun generate(moduleFragment: IrModuleFragment, pluginContext: IrPluginContext) {
+    println(moduleFragment.dump())
+    println(moduleFragment.dumpKotlinLike())
     val tempsToAdd: MutableMap<IrFunction, MutableList<IrVariable>> = mutableMapOf()
     val deferredAddedFunctions: MutableMap<IrFunction, IrFile> = mutableMapOf()
-    moduleFragment.lowerWith(InlineInvokeTransformer(pluginContext, deferredAddedFunctions))
 
-    for ((deferredAddedFunction, file) in deferredAddedFunctions) {
-      file.declarations.add(deferredAddedFunction)
-      deferredAddedFunction.parent = file
-    }
 
     val transformer = InlineHigherOrderFunctionsAndVariablesTransformer(pluginContext)
     moduleFragment.lowerWith(transformer)
-    moduleFragment.lowerWith(object : IrFileTransformerVoidWithContext(pluginContext) {
-      val functionAccesses = mutableListOf<IrExpression>()
-      override fun visitFunctionAccess(expression: IrFunctionAccessExpression): IrExpression {
-        val result = expression.run {
-          if (expression in functionAccesses)
-            return@run expression
-          val params = buildList {
-            add(dispatchReceiver)
-            add(extensionReceiver)
-            for (i in 0 until valueArgumentsCount) add(getValueArgument(i))
+    moduleFragment.lowerWith(CollapseContainerExpressionsReturningFunctionExpressionsTransformer(pluginContext))
+    moduleFragment.lowerWith(object: IrFileTransformerVoidWithContext(pluginContext){
+      override fun visitTypeOperator(expression: IrTypeOperatorCall): IrExpression {
+        if(expression.operator == IMPLICIT_COERCION_TO_UNIT && expression.argument.type.isFunctionTypeOrSubtype()){
+          expression.argument.replaceLastElementAndIterateBranches({replacer, statement -> expression.argument = replacer(statement).cast()}, expression.argument.type) {
+            if(it is IrFunctionExpression)
+              declarationIrBuilder.irNull()
+            else it
           }
-          val lambdaParamsWithBlockArgument = params.withIndex().filterNotNull()
-            .filter { it.value.type.isFunctionTypeOrSubtype() && it.value !is IrFunctionExpression }
-          if (lambdaParamsWithBlockArgument.isNotEmpty()) {
-            declarationIrBuilder.irComposite {
-              for (param in lambdaParamsWithBlockArgument) {
-                val newArgumentValue = param.value.lastElement() as IrExpression
-                accumulateStatementsExceptLast(param.value).forEach { +it }
-                expression.changeArgument(param.index, newArgumentValue)
-              }
-              +expression
-              functionAccesses.add(expression)
-            }
-          } else expression
         }
-        return super.visitExpression(result)
+        return super.visitTypeOperator(expression)
       }
     })
     moduleFragment.lowerWith(object :
@@ -122,6 +106,35 @@ class LambdaReturnInlinerIrGenerationExtension(
         } else super.visitVariable(declaration)
       }
     })
+    // Reinterpret WhenWithMapper
+    moduleFragment.lowerWith(object :
+      IrFileTransformerVoidWithContext(pluginContext) {
+      override fun visitWhen(expression: IrWhen): IrExpression {
+        var returnExpression: IrExpression = expression
+        if (expression is IrWhenWithMapper) {
+          val elseBranch = expression.branches.firstIsInstanceOrNull<IrElseBranch>()
+          returnExpression = (if (elseBranch != null) declarationIrBuilder.createWhenAccessForLambda(
+            expression.type,
+            expression.tempInt,
+            expression.mapper,
+            context,
+            elseBranch
+          ) else declarationIrBuilder.createWhenAccessForLambda(
+            expression.type,
+            expression.tempInt,
+            expression.mapper,
+            context,
+          )).takeIf { it !is IrWhenWithMapper }?.also { println("Reinterpreted When to ${it.dump()}") }
+            ?: expression // Only reinterpret the IrWhenWithMapper if it would become a different kind of IrExpression
+        }
+        super.visitExpression(returnExpression)
+        return returnExpression
+      }
+    })
+
+    // Some of the reinterpreted whens will now contain run calls that have their block argument surrounded with
+    // an IrContainerExpression, and so just ensure that they're collapsed so that they get inlined property
+    moduleFragment.lowerWith(CollapseContainerExpressionsReturningFunctionExpressionsTransformer(pluginContext))
     moduleFragment.lowerWith(object :
       IrFileTransformerVoidWithContext(pluginContext) {
       override fun visitFunctionNew(declaration: IrFunction): IrStatement {
@@ -139,10 +152,49 @@ class LambdaReturnInlinerIrGenerationExtension(
         return super.visitFunctionNew(declaration)
       }
     })
+    moduleFragment.lowerWith(InlineInvokeTransformer(pluginContext, deferredAddedFunctions))
+    for ((deferredAddedFunction, file) in deferredAddedFunctions) {
+      file.declarations.add(deferredAddedFunction)
+      deferredAddedFunction.parent = file
+    }
+
+    // TODO: delete shadowed external inline declarations
     println(moduleFragment.dump()) //TODO: only dump in debug mode
     println(moduleFragment.dumpKotlinLike())
   }
 
+}
+
+class CollapseContainerExpressionsReturningFunctionExpressionsTransformer(pluginContext: IrPluginContext) :
+  IrFileTransformerVoidWithContext(pluginContext) {
+  val functionAccesses = mutableListOf<IrExpression>()
+
+  @OptIn(ExperimentalStdlibApi::class)
+  override fun visitFunctionAccess(expression: IrFunctionAccessExpression): IrExpression {
+    val result = expression.run {
+      if (expression in functionAccesses)
+        return@run expression
+      val params = buildList {
+        add(dispatchReceiver)
+        add(extensionReceiver)
+        for (i in 0 until valueArgumentsCount) add(getValueArgument(i))
+      }
+      val lambdaParamsWithBlockArgument = params.withIndex().filterNotNull()
+        .filter { it.value.type.isFunctionTypeOrSubtype() && it.value !is IrFunctionExpression }
+      if (lambdaParamsWithBlockArgument.isNotEmpty()) {
+        declarationIrBuilder.irComposite {
+          for (param in lambdaParamsWithBlockArgument) {
+            val newArgumentValue = param.value.lastElement() as IrExpression
+            accumulateStatementsExceptLast(param.value).forEach { +it }
+            expression.changeArgument(param.index, newArgumentValue)
+          }
+          +expression
+          functionAccesses.add(expression)
+        }
+      } else expression
+    }
+    return super.visitExpression(result)
+  }
 }
 
 class InlineInvokeTransformer(
@@ -171,7 +223,7 @@ class InlineInvokeTransformer(
 
   @OptIn(ExperimentalStdlibApi::class)
   override fun visitFunctionAccess(expression: IrFunctionAccessExpression): IrExpression {
-    var returnExpression = expression
+    var returnExpression: IrExpression = expression
     val irFunction = expression.symbol.owner
     // Only replace invoke calls
     if (
@@ -245,19 +297,31 @@ class InlineInvokeTransformer(
               inlineInvokeDefs[expression.valueArgumentsCount] = it
               deferredAddedFunctions[it] = file
             }
-      returnExpression = declarationIrBuilder.irCall(
-        replacementInlineInvokeFunction
-      ).apply {
-        putValueArgument(0, expression.dispatchReceiver)
-        putTypeArgument(0, expression.type)
-        for (i in 1..expression.valueArgumentsCount) {
-          val currentValueArgument = expression.getValueArgument(i - 1)
-          putValueArgument(i, currentValueArgument)
-          putTypeArgument(i, currentValueArgument?.type)
-        }
+      // Without this implicit cast certain intrinsic replacement functions don't get replaced.
+      // For example, this happened while initially testing inlining for ScopingFunctionsAndNulls because one of the
+      // calls was adding the string result of an invoke to another string which caused the compiler to not replace that
+      // String.plus(Object) with the Intrinsics.stringPlus call (which caused a very unique NoSuchMethodException that
+      // was nowhere else to be found on the internet). I figured out the the idea of using an implicit cast because
+      // .apply{} on the string result caused the code to work, which (if you look at what FunctionInlining does) makes
+      // an implicit cast if the real return type of the function isn't the same as the expected one.
+      // TL;DR: Don't delete this implicit cast no matter what!
+      returnExpression = declarationIrBuilder.run {
+        typeOperator(
+          expression.type, irCall(
+            replacementInlineInvokeFunction
+          ).apply {
+            putValueArgument(0, expression.dispatchReceiver)
+            putTypeArgument(0, expression.type)
+            for (i in 1..expression.valueArgumentsCount) {
+              val currentValueArgument = expression.getValueArgument(i - 1)
+              putValueArgument(i, currentValueArgument)
+              putTypeArgument(i, currentValueArgument?.type)
+            }
+          }, IMPLICIT_CAST, expression.type
+        )
       }
     }
-    return super.visitFunctionAccess(returnExpression)
+    return super.visitExpression(returnExpression)
   }
 }
 
@@ -267,13 +331,14 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
 
   private val varMap: MutableMap<IrVariable, IrExpression> = mutableMapOf()
   override fun visitVariable(declaration: IrVariable): IrStatement {
+    val result = super.visitVariable(declaration)
     if (declaration.type.isFunctionTypeOrSubtype()) declaration.initializer?.let { varMap.put(declaration, it) }
-    return super.visitVariable(declaration)
+    return result
   }
 
   override fun visitTypeOperator(expression: IrTypeOperatorCall): IrExpression {
     val argument = expression.argument
-    val initializer = argument.safeAs<IrGetValue>()?.symbol?.owner?.safeAs<IrVariable>()?.initializer
+    val initializer = argument.safeAs<IrGetValue>()?.symbol?.owner?.safeAs<IrVariable>()?.initializer?.lastElement()
     if ((argument is IrGetValue && varMap[argument.symbol.owner.safeAs()] != null && initializer is IrWhenWithMapper) || argument is IrWhenWithMapper) {
       with(declarationIrBuilder) {
         val irWhenWithMapper: IrWhenWithMapper = when (argument) {
@@ -286,7 +351,7 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
         when (val operator = expression.operator) {
           CAST, IMPLICIT_CAST, IMPLICIT_DYNAMIC_CAST, REINTERPRET_CAST, SAFE_CAST, IMPLICIT_NOTNULL -> {
             irWhenWithMapper.mapper.forEachIndexed { index, value ->
-              newMapper[index] = value?.takeIf { it.type.isSubtypeOf(expression.typeOperand, context.irBuiltIns) }
+              newMapper.add(index, value?.takeIf { it.type.isSubtypeOf(expression.typeOperand, context.irBuiltIns) })
             }
             elseBranch = irElseBranch(
               when (operator) {
@@ -305,8 +370,8 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
             val valueIfInstance = irBoolean(operator == INSTANCEOF)
             val valueIfNotInstance: IrExpression = irBoolean(!valueIfInstance.value)
             irWhenWithMapper.mapper.forEachIndexed { index, value ->
-              newMapper[index] = value?.takeIf { it.type.isSubtypeOf(expression.typeOperand, context.irBuiltIns) }
-                ?.let { valueIfInstance }
+              newMapper.add(index, value?.takeIf { it.type.isSubtypeOf(expression.typeOperand, context.irBuiltIns) }
+                ?.let { valueIfInstance })
             }
             elseBranch = irElseBranch(valueIfNotInstance)
           }
@@ -332,7 +397,7 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
     expression.symbol.owner.safeAs<IrVariable>()?.let { requestedVar ->
       varMap[requestedVar]?.let { initializer ->
         return declarationIrBuilder.irComposite {
-          +(initializer.lastElement().deepCopyWithSymbols(parent))
+          +(initializer.lastElement().deepCopyWithSymbols(parent, ::WhenWithMapperAwareDeepCopyIrTreeWithSymbols))
         }.also { super.visitExpression(it) }
       }
     }
@@ -341,7 +406,25 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
 
 
   private val inlinedFunctionAccesses = mutableListOf<IrExpression>()
+  /* override fun visitBlock(expression: IrBlock): IrExpression {
+     if (expression.origin == IrStatementOrigin.SAFE_CALL) {
+       if (expression.statements.size == 2) {
+         val variable = expression.statements[0]
+         if (variable is IrVariable && variable.type.isFunctionTypeOrSubtype()) {
+           variable.initializer = variable.initializer?.let { initializer ->
+             declarationIrBuilder.typeOperator(
+               variable.type.makeNotNull(),
+               initializer,
+               IMPLICIT_NOTNULL,
+               variable.type.makeNotNull()
+             )
+           }
+         }
+       }
+     }
 
+     return super.visitBlock(expression)
+   }*/
 
   @OptIn(ExperimentalStdlibApi::class, ObsoleteDescriptorBasedAPI::class)
   override fun visitFunctionAccess(expression: IrFunctionAccessExpression): IrExpression {
@@ -366,6 +449,8 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
 
       if (originalFunction.isInline && (paramsNeedInlining || expression.type.isFunctionTypeOrSubtype())) {
         val mapper = mutableListOf<IrExpression>()
+        var isFirstReturn = true
+        var whenWithMapperReturn: IrWhenWithMapper? = null
         returnExpression =
           declarationIrBuilder.irBlock {
             at(expression)
@@ -395,10 +480,19 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
                       override fun visitReturn(expression: IrReturn): IrExpression {
                         if (expression.returnTargetSymbol != it.symbol)
                           return super.visitReturn(expression)
+                        if (isFirstReturn) {
+                          isFirstReturn = false
+                          expression.value.lastElement().let {
+                            if (it is IrWhenWithMapper)
+                              whenWithMapperReturn = it
+                          }
+                        } else {
+                          whenWithMapperReturn = null
+                        }
                         expression.value.type = context.irBuiltIns.intType
                         expression.value.replaceLastElementAndIterateBranches({ replacer, irStatement ->
                           expression.value = replacer(irStatement).cast()
-                        }) {
+                        }, newWhenType = context.irBuiltIns.intType) {
                           val lambdaNumber = mapper.size
                           mapper.add(it.cast())
                           irInt(lambdaNumber)
@@ -409,18 +503,47 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
                   }
                 }
               })
-              +createWhenAccessForLambda(
+              +(/*whenWithMapperReturn?.deepCopyWithSymbols(createCopier = ::WhenWithMapperAwareDeepCopyIrTreeWithSymbols) ?: */createWhenAccessForLambda(
                 originalType,
                 temp,
-                mapper,
+                mapper.map {
+                  it.transform(this@InlineHigherOrderFunctionsAndVariablesTransformer, null)
+                },
                 this@InlineHigherOrderFunctionsAndVariablesTransformer.context
-              )
+              ))
             } else {
               +inlinedVersion
             }
             inlinedFunctionAccesses.add(inlinedVersion)
           }
       } else if (expression.type == context.irBuiltIns.booleanType && (originalFunction.symbol == context.irBuiltIns.eqeqSymbol || originalFunction.symbol == context.irBuiltIns.eqeqeqSymbol)) {
+        val constArgument = allParams.firstIsInstanceOrNull<IrConst<*>>()
+
+        val irWhenWithMapperArgument: IrWhenWithMapper? = allParams.firstOrNull { argument ->
+          val initializer =
+            argument.safeAs<IrGetValue>()?.symbol?.owner?.safeAs<IrVariable>()?.initializer?.lastElement()
+          (argument is IrGetValue && varMap[argument.symbol.owner.safeAs()] != null && initializer is IrWhenWithMapper) || argument is IrWhenWithMapper
+        }?.let { argument ->
+          val initializer =
+            argument.safeAs<IrGetValue>()?.symbol?.owner?.safeAs<IrVariable>()?.initializer?.lastElement()
+          when (argument) {
+            is IrGetValue -> initializer.cast()
+            is IrWhenWithMapper -> argument
+            else -> throw IllegalStateException() // literally will never happen
+          }
+        }
+        if (constArgument != null && irWhenWithMapperArgument != null) {
+          val newMapper = irWhenWithMapperArgument.mapper.map {
+            val realValue = it?.lastElement()
+            declarationIrBuilder.irBoolean(realValue is IrConst<*> && realValue.value == constArgument.value)
+          }
+          returnExpression = declarationIrBuilder.createWhenAccessForLambda(
+            context.irBuiltIns.booleanType,
+            irWhenWithMapperArgument.tempInt,
+            newMapper,
+            this@InlineHigherOrderFunctionsAndVariablesTransformer.context,
+          )
+        }
       }
       return@run returnExpression
     }
@@ -430,7 +553,7 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
   }
 }
 
-@OptIn(ExperimentalStdlibApi::class)
+@OptIn(ExperimentalStdlibApi::class, org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI::class)
 private fun IrBuilderWithScope.createWhenAccessForLambda(
   originalType: IrType,
   tempInt: IrVariable,
@@ -438,13 +561,22 @@ private fun IrBuilderWithScope.createWhenAccessForLambda(
   context: IrPluginContext,
   elseBranch: IrElseBranch = irElseBranch(irCall(context.irBuiltIns.noWhenBranchMatchedExceptionSymbol))
 ): IrExpression {
+  val copiedMapper = mapper.map {
+    it?.deepCopyWithSymbols(
+      parent,
+      createCopier = ::WhenWithMapperAwareDeepCopyIrTreeWithSymbols
+    )
+  }
   val fallBackWhenImpl by lazy {
-    irWhenWithMapper(originalType, tempInt, mapper, buildList {
-      mapper.forEachIndexed { index, irExpression ->
+    irWhenWithMapper(originalType, tempInt, copiedMapper, buildList {
+      copiedMapper.forEachIndexed { index, irExpression ->
         if (irExpression != null) {
-          add(irBranch(irEquals(irGet(tempInt), irInt(index)),
-            irComposite { +irExpression }
-          ))
+          add(
+            irBranchWithMapper(
+              irEquals(irGet(tempInt), irInt(index)),
+              irExpression
+            )
+          )
         }
       }
       add(elseBranch)
@@ -454,12 +586,24 @@ private fun IrBuilderWithScope.createWhenAccessForLambda(
     return fallBackWhenImpl
 
   //TODO: figure out how to correctly handle lambdas of different arities
-  val originalFun =
-    mapper.filterIsInstance<IrFunctionExpression>().takeIf { functionExpressions ->
+  val firstFunctionExpression =
+    copiedMapper.map { it?.lastElement() }.filterIsInstance<IrFunctionExpression>().takeIf { functionExpressions ->
       functionExpressions.firstOrNull()?.let { firstFunctionExpression ->
         functionExpressions.all { functionExpression -> functionExpression.function.valueParameters.size == firstFunctionExpression.function.valueParameters.size }
       } == true
-    }?.first()?.function ?: return fallBackWhenImpl
+    }?.first()
+  val originalFun =
+    firstFunctionExpression?.function ?: return fallBackWhenImpl
+  if (copiedMapper.any {
+      it?.type?.isSubtypeOf(
+        firstFunctionExpression.type,
+        context.irBuiltIns
+      ) == false && !it.type.toKotlinType().isNothingOrNullableNothing()
+    }) {
+    return fallBackWhenImpl
+  }
+  // Now we're sure that all of the expressions in mapper are the same function type or an expression returning Nothing
+  // or null, and so we can now safely assume that they all have the same number of arguments for invoke
   val createdFunction = context.irFactory.buildFun {
     updateFrom(originalFun)
     name = originalFun.name
@@ -476,32 +620,39 @@ private fun IrBuilderWithScope.createWhenAccessForLambda(
     originalFun.dispatchReceiverParameter?.deepCopyWithSymbols(this)
       .let { dispatchReceiverParameter = it }
     body = DeclarationIrBuilder(this@createWhenAccessForLambda.context, createdFunction.symbol).irBlockBody {
-      +irReturn(irWhenWithMapper(originalFun.returnType, tempInt, mapper, buildList {
-        mapper.forEachIndexed { index, irExpression ->
+      +irReturn(irWhenWithMapper(originalFun.returnType, tempInt, copiedMapper, buildList {
+        copiedMapper.forEachIndexed { index, irExpression ->
           if (irExpression != null) {
-            add(irBranch(irEquals(irGet(tempInt), irInt(index)),
-              irComposite {
-                +irCall(context.referenceFunctions(kotlinPackageFqn.child(Name.identifier("run")))
-                  .first { it.owner.dispatchReceiverParameter == null }).apply {
-                  val lambdaReturnType = originalFun.returnType
-                  putTypeArgument(0, lambdaReturnType)
-                  putValueArgument(
-                    0,
-                    irExpression.safeAs<IrFunctionExpression>()?.apply {
-                      type = context.irBuiltIns.function(0).typeWith(lambdaReturnType)
-                      irExpression.patchDeclarationParents(createdFunction)
-                      function.body?.transformChildrenVoid(object : IrElementTransformerVoid() {
-                        override fun visitGetValue(expression: IrGetValue): IrExpression {
-                          function.valueParameters.indexOfOrNull(expression.symbol.owner)?.let {
-                            return irGet(createdFunction.valueParameters[it])
-                          }
-                          return super.visitGetValue(expression)
+            irExpression.patchDeclarationParents(createdFunction)
+            add(irBranchWithMapper(irEquals(irGet(tempInt), irInt(index)),
+              if (irExpression is IrFunctionExpression){ irCall(context.referenceFunctions(kotlinPackageFqn.child(Name.identifier("run")))
+                .first { it.owner.dispatchReceiverParameter == null }).apply {
+
+                val lambdaReturnType = originalFun.returnType
+                putTypeArgument(0, lambdaReturnType)
+                putValueArgument(
+                  0,
+                  irExpression.safeAs<IrFunctionExpression>()?.apply {
+                    type = context.irBuiltIns.function(0).typeWith(lambdaReturnType)
+                    function.body?.transformChildrenVoid(object : IrElementTransformerVoid() {
+                      override fun visitGetValue(expression: IrGetValue): IrExpression {
+                        function.valueParameters.indexOfOrNull(expression.symbol.owner)?.let {
+                          return irGet(createdFunction.valueParameters[it])
                         }
-                      })
-                      function.valueParameters = listOf()
+                        return super.visitGetValue(expression)
+                      }
                     })
+                    function.valueParameters = listOf()
+                  } ?: irExpression)
+              } } else {
+                irCall(originalType.classOrNull?.functions?.filter { it.owner.name == OperatorNameConventions.INVOKE && it.owner.extensionReceiverParameter == null && it.owner.valueParameters.size == originalFun.valueParameters.size }!!.first()).apply {
+                  dispatchReceiver = irExpression
+                  valueParameters.map { irGet(it) }.forEachIndexed { index, irGetValue ->
+                    putValueArgument(index, irGetValue)
+                  }
                 }
               }
+
             ))
           }
         }

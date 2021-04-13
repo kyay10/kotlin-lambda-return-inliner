@@ -23,18 +23,19 @@ import com.tschuchort.compiletesting.PluginOption
 import com.tschuchort.compiletesting.SourceFile
 import org.jetbrains.kotlin.compiler.plugin.CommandLineProcessor
 import org.jetbrains.kotlin.compiler.plugin.ComponentRegistrar
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
 import java.io.File
 import java.io.FileFilter
 import java.lang.reflect.InvocationTargetException
 import kotlin.test.assertEquals
-
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class LambdaReturnInlinerPluginTest {
   val sampleFiles = mutableListOf<SourceFile>()
   lateinit var compiledSamples: KotlinCompilation.Result
 
-  @Before
+  @BeforeEach
   fun setupSampleFiles() {
     val sampleJvmMainDirectory = File(BuildConfig.SAMPLE_JVM_MAIN_PATH)
     sampleFiles.addAll(sampleJvmMainDirectory.listFilesRecursively { it.extension == "kt" }
@@ -72,8 +73,8 @@ class LambdaReturnInlinerPluginTest {
       verbose = true
       kotlincArguments = kotlincArguments + "-Xallow-kotlin-package"
     }.compile()
-    //runMain(compiledSamples, "ScopingFunctionsAndNullsKt")
-    //assertEquals(KotlinCompilation.ExitCode.OK, compiledSamples.exitCode)
+    runMain(compiledSamples, "ScopingFunctionsAndNullsKt")
+    assertEquals(KotlinCompilation.ExitCode.OK, compiledSamples.exitCode)
   }
 }
 

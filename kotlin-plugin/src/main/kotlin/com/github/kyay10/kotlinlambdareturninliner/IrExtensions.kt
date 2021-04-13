@@ -2,14 +2,18 @@ package com.github.kyay10.kotlinlambdareturninliner
 
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
 import org.jetbrains.kotlin.backend.common.lower
+import org.jetbrains.kotlin.ir.IrElement
+import org.jetbrains.kotlin.ir.IrElementBase
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.declarations.IrTypeParameter
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.types.IrSimpleType
+import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.types.IrTypeAbbreviation
 import org.jetbrains.kotlin.ir.types.IrTypeArgument
 import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeImpl
+import org.jetbrains.kotlin.ir.visitors.IrElementTransformer
 import org.jetbrains.kotlin.utils.addToStdlib.cast
 import kotlin.contracts.ExperimentalContracts
 import kotlin.contracts.InvocationKind
@@ -28,16 +32,22 @@ fun IrTypeParameter.createSimpleType(
 
 fun IrStatement.replaceLastElementAndIterateBranches(
   onThisNotContainer: (replacer: (IrStatement) -> IrStatement, IrStatement) -> Unit,
-  replacer: (IrStatement) -> IrStatement
+  newWhenType: IrType,
+  replacer: (IrStatement) -> IrStatement,
 ): IrStatement {
   return replaceLastElement(onThisNotContainer) {
     if (it is IrWhen) {
+      it.type = newWhenType
       it.branches.forEach { branch ->
-        branch.result.replaceLastElementAndIterateBranches({ _, irStatement ->
-          branch.result = replacer(
-            irStatement
-          ).cast()
-        }, replacer)
+        branch.result.replaceLastElementAndIterateBranches(
+          { _, irStatement ->
+            branch.result = replacer(
+              irStatement
+            ).cast()
+          },
+          newWhenType,
+          replacer,
+        )
       }
       it
     } else replacer(it)
@@ -85,5 +95,19 @@ tailrec fun accumulateStatementsExceptLast(
   return if (statement !is IrContainerExpression) list else {
     list.addAll(statement.statements.dropLast(1))
     accumulateStatementsExceptLast(statement.statements.last(), list)
+  }
+}
+
+inline fun <reified T : IrElement> MutableList<T?>.transformInPlace(transformation: (T) -> IrElement) {
+  for (i in 0 until size) {
+    get(i)?.let { set(i, transformation(it) as T) }
+  }
+}
+
+fun <T : IrElement, D> MutableList<T?>.transformInPlace(transformer: IrElementTransformer<D>, data: D) {
+  for (i in 0 until size) {
+    // Cast to IrElementBase to avoid casting to interface and invokeinterface, both of which are slow.
+    @Suppress("UNCHECKED_CAST")
+    get(i)?.let { set(i, (it as IrElementBase).transform(transformer, data) as T) }
   }
 }
