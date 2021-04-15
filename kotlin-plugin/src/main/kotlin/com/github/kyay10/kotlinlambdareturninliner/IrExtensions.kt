@@ -6,6 +6,7 @@ import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrElementBase
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
+import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.declarations.IrTypeParameter
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.types.IrSimpleType
@@ -13,7 +14,9 @@ import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.types.IrTypeAbbreviation
 import org.jetbrains.kotlin.ir.types.IrTypeArgument
 import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeImpl
+import org.jetbrains.kotlin.ir.util.isFunctionTypeOrSubtype
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformer
+import org.jetbrains.kotlin.util.OperatorNameConventions
 import org.jetbrains.kotlin.utils.addToStdlib.cast
 import kotlin.contracts.ExperimentalContracts
 import kotlin.contracts.InvocationKind
@@ -111,3 +114,12 @@ fun <T : IrElement, D> MutableList<T?>.transformInPlace(transformer: IrElementTr
     get(i)?.let { set(i, (it as IrElementBase).transform(transformer, data) as T) }
   }
 }
+
+val IrFunctionAccessExpression.isInvokeCall: Boolean
+  get() {
+    val irFunction = symbol.owner
+    return irFunction.name == OperatorNameConventions.INVOKE &&
+      irFunction.safeAs<IrSimpleFunction>()?.isOperator == true &&
+      dispatchReceiver?.type?.isFunctionTypeOrSubtype() == true &&
+      extensionReceiver == null
+  }

@@ -7,7 +7,11 @@ import org.jetbrains.kotlin.backend.common.lower.DeclarationIrBuilder
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.builders.IrGeneratorContext
 import org.jetbrains.kotlin.ir.declarations.IrFile
+import org.jetbrains.kotlin.ir.declarations.IrFunction
+import org.jetbrains.kotlin.ir.expressions.IrFunctionAccessExpression
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
+import org.jetbrains.kotlin.ir.util.fqNameWhenAvailable
+import com.github.kyay10.kotlinlambdareturninliner.isInvokeCall as _isInvokeCall
 
 open class IrFileTransformerVoidWithContext(val context: IrPluginContext) : IrElementTransformerVoidWithContext(),
   FileLoweringPass {
@@ -25,4 +29,7 @@ open class IrFileTransformerVoidWithContext(val context: IrPluginContext) : IrEl
     symbol: IrSymbol = currentScope!!.scope.scopeOwnerSymbol,
     startOffset: Int = UNDEFINED_OFFSET, endOffset: Int = UNDEFINED_OFFSET
   ) = DeclarationIrBuilder(generatorContext, symbol, startOffset, endOffset)
+
+  val IrFunctionAccessExpression.isInvokeCall: Boolean get() = _isInvokeCall &&
+    currentFunction?.irElement.safeAs<IrFunction>()?.fqNameWhenAvailable != INLINE_INVOKE_FQNAME
 }

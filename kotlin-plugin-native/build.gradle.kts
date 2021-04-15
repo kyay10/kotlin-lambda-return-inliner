@@ -26,6 +26,7 @@ tasks.register<Sync>("syncSource") {
   filter {
     // Replace shadowed imports from plugin module
     it.replace("import org.jetbrains.kotlin.com.intellij.", "import com.intellij.")
+      .replace("import org.jetbrains.kotlin.com.google.", "import com.google.")
   }
 }
 

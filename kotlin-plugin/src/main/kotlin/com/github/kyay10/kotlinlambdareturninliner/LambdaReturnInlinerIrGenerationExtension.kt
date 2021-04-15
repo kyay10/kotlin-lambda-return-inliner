@@ -36,6 +36,8 @@ import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.IrTypeOperator.*
 import org.jetbrains.kotlin.ir.expressions.impl.IrFunctionExpressionImpl
+import org.jetbrains.kotlin.ir.symbols.IrReturnableBlockSymbol
+import org.jetbrains.kotlin.ir.symbols.IrValueSymbol
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
@@ -65,45 +67,23 @@ class LambdaReturnInlinerIrGenerationExtension(
 
     val transformer = InlineHigherOrderFunctionsAndVariablesTransformer(pluginContext)
     moduleFragment.lowerWith(transformer)
-    moduleFragment.lowerWith(CollapseContainerExpressionsReturningFunctionExpressionsTransformer(pluginContext))
-    moduleFragment.lowerWith(object: IrFileTransformerVoidWithContext(pluginContext){
+    moduleFragment.lowerWith(
+      com.github.kyay10.kotlinlambdareturninliner.CollapseContainerExpressionsReturningFunctionExpressionsTransformer(
+        pluginContext
+      )
+    )
+    moduleFragment.lowerWith(object : IrFileTransformerVoidWithContext(pluginContext) {
       override fun visitTypeOperator(expression: IrTypeOperatorCall): IrExpression {
-        if(expression.operator == IMPLICIT_COERCION_TO_UNIT && expression.argument.type.isFunctionTypeOrSubtype()){
-          expression.argument.replaceLastElementAndIterateBranches({replacer, statement -> expression.argument = replacer(statement).cast()}, expression.argument.type) {
-            if(it is IrFunctionExpression)
+        if (expression.operator == IMPLICIT_COERCION_TO_UNIT && expression.argument.type.isFunctionTypeOrSubtype()) {
+          expression.argument.replaceLastElementAndIterateBranches({ replacer, statement ->
+            expression.argument = replacer(statement).cast()
+          }, expression.argument.type) {
+            if (it is IrFunctionExpression)
               declarationIrBuilder.irNull()
             else it
           }
         }
         return super.visitTypeOperator(expression)
-      }
-    })
-    moduleFragment.lowerWith(object :
-      IrFileTransformerVoidWithContext(pluginContext) {
-      override fun visitFunctionNew(declaration: IrFunction): IrStatement {
-        tempsToAdd[declaration] = tempsToAdd[declaration] ?: mutableListOf()
-        return super.visitFunctionNew(declaration)
-      }
-
-      override fun visitVariable(declaration: IrVariable): IrStatement {
-        if (declaration.type.isFunctionTypeOrSubtype()) {
-          declaration.transformChildrenVoid(object : IrElementTransformerVoid() {
-            override fun visitFunctionExpression(expression: IrFunctionExpression): IrExpression {
-              super.visitFunctionExpression(expression)
-              return declarationIrBuilder.irBlock { +irNull() } // TODO: add configuration option for this and allow its usage for non-inline usages
-            }
-          })
-        }
-        return if (declaration.origin == IrDeclarationOrigin.IR_TEMPORARY_VARIABLE) {
-          super.visitVariable(declaration)
-          declarationIrBuilder.irBlock {
-            tempsToAdd[allScopes.first { it.irElement is IrFunction }.irElement.cast()]?.add(declaration)
-            declaration.initializer?.let {
-              +irSet(declaration.symbol, it)
-              declaration.initializer = null
-            }
-          }
-        } else super.visitVariable(declaration)
       }
     })
     // Reinterpret WhenWithMapper
@@ -124,7 +104,7 @@ class LambdaReturnInlinerIrGenerationExtension(
             expression.tempInt,
             expression.mapper,
             context,
-          )).takeIf { it !is IrWhenWithMapper }?.also { println("Reinterpreted When to ${it.dump()}") }
+          )).takeIf { it !is IrWhenWithMapper }
             ?: expression // Only reinterpret the IrWhenWithMapper if it would become a different kind of IrExpression
         }
         super.visitExpression(returnExpression)
@@ -134,7 +114,136 @@ class LambdaReturnInlinerIrGenerationExtension(
 
     // Some of the reinterpreted whens will now contain run calls that have their block argument surrounded with
     // an IrContainerExpression, and so just ensure that they're collapsed so that they get inlined property
-    moduleFragment.lowerWith(CollapseContainerExpressionsReturningFunctionExpressionsTransformer(pluginContext))
+    moduleFragment.lowerWith(
+      com.github.kyay10.kotlinlambdareturninliner.CollapseContainerExpressionsReturningFunctionExpressionsTransformer(
+        pluginContext
+      )
+    )
+    moduleFragment.lowerWith(object :
+      IrFileTransformerVoidWithContext(pluginContext) {
+      override fun visitFunctionNew(declaration: IrFunction): IrStatement {
+        tempsToAdd[declaration] = tempsToAdd[declaration] ?: mutableListOf()
+        return super.visitFunctionNew(declaration)
+      }
+
+      override fun visitVariable(declaration: IrVariable): IrStatement {
+        if (declaration.type.isFunctionTypeOrSubtype() && false) {
+          declaration.transformChildrenVoid(object : IrElementTransformerVoid() {
+            override fun visitFunctionExpression(expression: IrFunctionExpression): IrExpression {
+              super.visitFunctionExpression(expression)
+              return declarationIrBuilder.irBlock { +irNull() } // TODO: add configuration option for this and allow its usage for non-inline usages
+            }
+          })
+        } else if (declaration.type.isFunctionTypeOrSubtype()) {
+          declaration.initializer?.replaceLastElementAndIterateBranches({ replacer, statement ->
+            declaration.initializer = replacer(statement).cast()
+          }, declaration.type) {
+            if (it is IrFunctionExpression)
+              declarationIrBuilder.irNull()
+            else it
+          }
+        }
+        return if (declaration.origin == IrDeclarationOrigin.IR_TEMPORARY_VARIABLE || declaration.isVar) {
+          super.visitVariable(declaration)
+          declarationIrBuilder.irBlock {
+            tempsToAdd[allScopes.first { it.irElement is IrFunction }.irElement.cast()]?.add(declaration)
+            declaration.initializer?.let {
+              +irSet(declaration.symbol, it)
+              declaration.initializer = null
+            }
+          }
+        } else super.visitVariable(declaration)
+      }
+    })
+    val variableToConstantValue = mutableMapOf<IrValueSymbol, IrExpression>()
+    moduleFragment.lowerWith(object : IrFileTransformerVoidWithContext(pluginContext) {
+      override fun visitSetValue(expression: IrSetValue): IrExpression {
+        val result = super.visitSetValue(expression)
+        if(expression.symbol.owner.isImmutable) {
+          val trueValue = expression.value.lastElement().safeAs<IrExpression>()?.extractFromReturnIfNeeded()
+          if (trueValue is IrGetEnumValue) {
+            variableToConstantValue[expression.symbol] = trueValue
+          }
+          if (trueValue is IrConst<*>) {
+            variableToConstantValue[expression.symbol] = trueValue
+          }
+        }
+        return result
+      }
+
+      override fun visitVariable(declaration: IrVariable): IrStatement {
+        val result = super.visitVariable(declaration)
+        if(!declaration.isVar) {
+          val trueValue = declaration.initializer?.lastElement()?.safeAs<IrExpression>()?.extractFromReturnIfNeeded()
+          if (trueValue is IrGetEnumValue) {
+            variableToConstantValue[declaration.symbol] = trueValue
+          }
+          if (trueValue is IrConst<*>) {
+            variableToConstantValue[declaration.symbol] = trueValue
+          }
+        }
+        return result
+      }
+
+      override fun visitGetValue(expression: IrGetValue): IrExpression {
+        return variableToConstantValue[expression.symbol]?.deepCopyWithSymbols(
+          currentDeclarationParent,
+          ::WhenWithMapperAwareDeepCopyIrTreeWithSymbols
+        ) ?: super.visitGetValue(expression)
+      }
+
+      override fun visitFunctionAccess(expression: IrFunctionAccessExpression): IrExpression {
+        if (expression.isInvokeCall) {
+          expression.dispatchReceiver.safeAs<IrFunctionExpression>()?.function?.let { function ->
+            for (parameterIndex in 0 until expression.valueArgumentsCount) {
+              val argument = expression.getValueArgument(parameterIndex)
+              val parameterSymbol = function.valueParameters[parameterIndex].symbol
+              val trueValue = argument?.lastElement()?.safeAs<IrExpression>()?.extractFromReturnIfNeeded()
+              if (trueValue is IrGetEnumValue) {
+                variableToConstantValue[parameterSymbol] = trueValue
+              }
+              if (trueValue is IrConst<*>) {
+                variableToConstantValue[parameterSymbol] = trueValue
+              }
+            }
+          }
+        }
+        return super.visitFunctionAccess(expression)
+      }
+    })
+
+    moduleFragment.lowerWith(object : IrFileTransformerVoidWithContext(pluginContext) {
+      override fun visitGetValue(expression: IrGetValue): IrExpression {
+        return variableToConstantValue[expression.symbol]?.deepCopyWithSymbols(
+          currentDeclarationParent,
+          ::WhenWithMapperAwareDeepCopyIrTreeWithSymbols
+        ) ?: super.visitGetValue(expression)
+      }
+
+      override fun visitWhen(expression: IrWhen): IrExpression {
+        val result = super.visitWhen(expression)
+        val branchIndicesToDelete = mutableListOf<Int>()
+        val singlePossibleBranch = run {
+          var previousBranchesAllFalse: Boolean = true
+          expression.branches.forEachIndexed { index, branch ->
+            branch.condition.calculatePredeterminedEqualityIfPossible(
+              context
+            )?.let { predeterminedEquality ->
+              if (predeterminedEquality) {
+                if (previousBranchesAllFalse) {
+                  return@run branch.result
+                } else Unit
+              } else branchIndicesToDelete.add(index)
+            } ?: run { previousBranchesAllFalse = false }
+          }
+          null
+        }
+        if (singlePossibleBranch != null)
+          return singlePossibleBranch
+        for (branchIndexToDelete in branchIndicesToDelete) expression.branches.removeAt(branchIndexToDelete)
+        return result
+      }
+    })
     moduleFragment.lowerWith(object :
       IrFileTransformerVoidWithContext(pluginContext) {
       override fun visitFunctionNew(declaration: IrFunction): IrStatement {
@@ -157,12 +266,76 @@ class LambdaReturnInlinerIrGenerationExtension(
       file.declarations.add(deferredAddedFunction)
       deferredAddedFunction.parent = file
     }
+    /*moduleFragment.lowerWith(object : IrFileTransformerVoidWithContext(pluginContext) {
+      override fun visitFunctionNew(declaration: IrFunction): IrStatement {
+        return super.visitFunctionNew(declaration).also {
+          when (val body = it.safeAs<IrFunction>()?.body) {
+            is IrBlockBody -> {
+              val newBlock = declarationIrBuilder.irBlock { body.statements.forEach { +it } }
+              body.statements.clear()
+              body.statements.add(newBlock)
+            }
+            is IrExpressionBody -> {
+              body.expression = declarationIrBuilder.irBlock { +body.expression }
+            }
+          }
+        }
+      }
+
+      var variableSetToAdd: IrSetValue? = null
+      override fun visitBody(body: IrBody): IrBody {
+        return super.visitBody(body)
+      }
+
+      override fun visitContainerExpression(expression: IrContainerExpression): IrExpression {
+        val variableSetsToAdd = mutableMapOf<IrSetValue, Int>()
+        expression.statements.forEachIndexed { i, irStatement ->
+          val previousVariableSetToAdd = variableSetToAdd
+          expression.statements[i] = irStatement.transform(this, null) as IrStatement
+          variableSetToAdd.takeIf { it != previousVariableSetToAdd }?.let { variableSetToAdd ->
+            variableSetsToAdd[variableSetToAdd] = i + variableSetsToAdd.size + 1
+          }
+          variableSetToAdd = previousVariableSetToAdd
+        }
+        for ((setToAdd, index) in variableSetsToAdd) {
+          expression.statements.add(index, setToAdd)
+        }
+        return expression
+      }
+
+      override fun visitVariable(declaration: IrVariable): IrStatement {
+        val variable = super.visitVariable(declaration).let { it.safeAs<IrVariable>() ?: return it }
+        val initializer = variable.initializer
+        if (variable.type.isFunctionTypeOrSubtype() && initializer != null) {
+          variableSetToAdd = declarationIrBuilder.irSet(variable.symbol, initializer)
+          variable.initializer = null
+        }
+        return variable
+      }
+    })*/
+
 
     // TODO: delete shadowed external inline declarations
     println(moduleFragment.dump()) //TODO: only dump in debug mode
     println(moduleFragment.dumpKotlinLike())
   }
 
+}
+
+fun IrExpression.extractFromReturnIfNeeded(): IrExpression =
+  if (this is IrReturn && this.returnTargetSymbol is IrReturnableBlockSymbol) value.lastElement().cast<IrExpression>()
+    .extractFromReturnIfNeeded() else this
+
+fun IrExpression.calculatePredeterminedEqualityIfPossible(context: IrPluginContext): Boolean? {
+  val trueElement = lastElement().cast<IrExpression>().extractFromReturnIfNeeded()
+  if (trueElement is IrConst<*> && trueElement.kind == IrConstKind.Boolean) return trueElement.cast<IrConst<Boolean>>().value
+  if (trueElement is IrCall && (trueElement.symbol == context.irBuiltIns.eqeqSymbol || trueElement.symbol == context.irBuiltIns.eqeqeqSymbol)) {
+    val lhs = trueElement.getValueArgument(0)
+    val rhs = trueElement.getValueArgument(1)
+    if (lhs is IrGetEnumValue && rhs is IrGetEnumValue) return lhs.symbol == rhs.symbol
+    if (lhs is IrConst<*> && rhs is IrConst<*>) return lhs.value == rhs.value
+  }
+  return null
 }
 
 class CollapseContainerExpressionsReturningFunctionExpressionsTransformer(pluginContext: IrPluginContext) :
@@ -219,20 +392,14 @@ class InlineInvokeTransformer(
     }.owner
 
   // Initialize with the magic number 22 since those are the most common arities.
-  private val inlineInvokeDefs = ArrayList<IrSimpleFunction?>(22)//inlineInvoke0)
+  private val inlineInvokeDefs = ArrayList<IrSimpleFunction?>(22)
 
   @OptIn(ExperimentalStdlibApi::class)
   override fun visitFunctionAccess(expression: IrFunctionAccessExpression): IrExpression {
     var returnExpression: IrExpression = expression
     val irFunction = expression.symbol.owner
     // Only replace invoke calls
-    if (
-      irFunction.name == OperatorNameConventions.INVOKE &&
-      irFunction.safeAs<IrSimpleFunction>()?.isOperator == true &&
-      expression.dispatchReceiver?.type?.isFunctionTypeOrSubtype() == true &&
-      expression.extensionReceiver == null &&
-      currentFunction?.irElement.safeAs<IrFunction>()?.fqNameWhenAvailable != INLINE_INVOKE_FQNAME
-    ) {
+    if (expression.isInvokeCall) {
       val replacementInlineInvokeFunction =
         inlineInvokeDefs.getOrNull(expression.valueArgumentsCount)
           ?: inlineInvoke0.parent.cast<IrDeclaration>().factory.buildFun {
@@ -625,27 +792,32 @@ private fun IrBuilderWithScope.createWhenAccessForLambda(
           if (irExpression != null) {
             irExpression.patchDeclarationParents(createdFunction)
             add(irBranchWithMapper(irEquals(irGet(tempInt), irInt(index)),
-              if (irExpression is IrFunctionExpression){ irCall(context.referenceFunctions(kotlinPackageFqn.child(Name.identifier("run")))
-                .first { it.owner.dispatchReceiverParameter == null }).apply {
+              if (irExpression is IrFunctionExpression) {
+                irCall(context.referenceFunctions(kotlinPackageFqn.child(Name.identifier("run")))
+                  .first { it.owner.dispatchReceiverParameter == null }).apply {
 
-                val lambdaReturnType = originalFun.returnType
-                putTypeArgument(0, lambdaReturnType)
-                putValueArgument(
-                  0,
-                  irExpression.safeAs<IrFunctionExpression>()?.apply {
-                    type = context.irBuiltIns.function(0).typeWith(lambdaReturnType)
-                    function.body?.transformChildrenVoid(object : IrElementTransformerVoid() {
-                      override fun visitGetValue(expression: IrGetValue): IrExpression {
-                        function.valueParameters.indexOfOrNull(expression.symbol.owner)?.let {
-                          return irGet(createdFunction.valueParameters[it])
+                  val lambdaReturnType = originalFun.returnType
+                  putTypeArgument(0, lambdaReturnType)
+                  putValueArgument(
+                    0,
+                    irExpression.safeAs<IrFunctionExpression>()?.apply {
+                      type = context.irBuiltIns.function(0).typeWith(lambdaReturnType)
+                      function.body?.transformChildrenVoid(object : IrElementTransformerVoid() {
+                        override fun visitGetValue(expression: IrGetValue): IrExpression {
+                          function.valueParameters.indexOfOrNull(expression.symbol.owner)?.let {
+                            return irGet(createdFunction.valueParameters[it])
+                          }
+                          return super.visitGetValue(expression)
                         }
-                        return super.visitGetValue(expression)
-                      }
-                    })
-                    function.valueParameters = listOf()
-                  } ?: irExpression)
-              } } else {
-                irCall(originalType.classOrNull?.functions?.filter { it.owner.name == OperatorNameConventions.INVOKE && it.owner.extensionReceiverParameter == null && it.owner.valueParameters.size == originalFun.valueParameters.size }!!.first()).apply {
+                      })
+                      function.valueParameters = listOf()
+                    } ?: irExpression)
+                }
+              } else {
+                irCall(
+                  originalType.classOrNull?.functions?.filter { it.owner.name == OperatorNameConventions.INVOKE && it.owner.extensionReceiverParameter == null && it.owner.valueParameters.size == originalFun.valueParameters.size }!!
+                    .first()
+                ).apply {
                   dispatchReceiver = irExpression
                   valueParameters.map { irGet(it) }.forEachIndexed { index, irGetValue ->
                     putValueArgument(index, irGetValue)

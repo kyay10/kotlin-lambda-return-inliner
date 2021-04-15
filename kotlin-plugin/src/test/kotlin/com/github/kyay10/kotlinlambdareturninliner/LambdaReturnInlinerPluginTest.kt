@@ -18,7 +18,6 @@
 package com.github.kyay10.kotlinlambdareturninliner
 
 import com.tschuchort.compiletesting.KotlinCompilation
-import com.tschuchort.compiletesting.KotlinJsCompilation
 import com.tschuchort.compiletesting.PluginOption
 import com.tschuchort.compiletesting.SourceFile
 import org.jetbrains.kotlin.compiler.plugin.CommandLineProcessor
@@ -63,17 +62,13 @@ class LambdaReturnInlinerPluginTest {
 
   @Test
   fun `Scoping Functions and Nulls`() {
-    KotlinJsCompilation().apply {
-      irProduceJs = true
-      sources = sampleFiles
-      this.irOnly = true
-      compilerPlugins = listOf(LambdaReturnInlinerComponentRegistrar())
-      inheritClassPath = true
-      messageOutputStream = System.out // see diagnostics in real time
-      verbose = true
-      kotlincArguments = kotlincArguments + "-Xallow-kotlin-package"
-    }.compile()
     runMain(compiledSamples, "ScopingFunctionsAndNullsKt")
+    assertEquals(KotlinCompilation.ExitCode.OK, compiledSamples.exitCode)
+  }
+
+  @Test
+  fun `Efficient List Operations`() {
+    runMain(compiledSamples, "EfficientListOperationsKt")
     assertEquals(KotlinCompilation.ExitCode.OK, compiledSamples.exitCode)
   }
 }

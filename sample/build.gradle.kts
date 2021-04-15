@@ -1,6 +1,6 @@
 plugins {
   kotlin("multiplatform") version "1.4.31"
-  id("com.github.kyay10.kotlin-lambda-return-inliner") version "0.1.1-SNAPSHOT"
+  //id("com.github.kyay10.kotlin-lambda-return-inliner") version "0.1.1-SNAPSHOT"
 }
 
 group = "com.github.kyay10.kotlin_lambda_return_inliner"
@@ -10,6 +10,7 @@ repositories {
   mavenCentral()
   maven(url = "https://jitpack.io")
 }
+
 kotlin {
   jvm {
     compilations.all {
