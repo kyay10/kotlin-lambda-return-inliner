@@ -29,7 +29,7 @@ import org.jetbrains.kotlin.gradle.plugin.SubpluginOption
 
 class LambdaReturnInlinerGradlePlugin : KotlinCompilerPluginSupportPlugin {
   override fun apply(target: Project): Unit = with(target) {
-    extensions.create("lambdaReturnInliner", LambdaReturnInlinerGradleExtension::class.java, target)
+    extensions.create("lambdaReturnInliner", LambdaReturnInlinerGradleExtension::class.java)
   }
 
   override fun isApplicable(kotlinCompilation: KotlinCompilation<*>): Boolean = true

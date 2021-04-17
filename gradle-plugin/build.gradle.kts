@@ -15,7 +15,11 @@ dependencies {
 buildConfig {
   val project = project(":kotlin-plugin")
   packageName(project.group.toString().replace("-", ""))
-  buildConfigField("String", "KOTLIN_PLUGIN_ID", "\"${rootProject.extra["kotlin_plugin_id"]}\"")
+  buildConfigField(
+    "String",
+    "KOTLIN_PLUGIN_ID",
+    "\"${rootProject.extra["kotlin_plugin_id"].toString().replace("-", "")}\""
+  )
   buildConfigField("String", "KOTLIN_PLUGIN_GROUP", "\"${project.group}\"")
   buildConfigField("String", "KOTLIN_PLUGIN_NAME", "\"${project.name}\"")
   buildConfigField("String", "KOTLIN_PLUGIN_VERSION", "\"${project.version}\"")
@@ -72,5 +76,5 @@ pluginBundle {
 }
 val compileKotlin: KotlinCompile by tasks
 compileKotlin.kotlinOptions {
-    freeCompilerArgs = listOf("-Xinline-classes")
+  freeCompilerArgs = listOf("-Xinline-classes")
 }
