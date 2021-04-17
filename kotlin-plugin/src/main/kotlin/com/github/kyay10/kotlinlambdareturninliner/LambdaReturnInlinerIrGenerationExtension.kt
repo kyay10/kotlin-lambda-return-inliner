@@ -22,6 +22,7 @@ import org.jetbrains.kotlin.backend.common.extensions.IrGenerationExtension
 import org.jetbrains.kotlin.backend.common.extensions.IrPluginContext
 import org.jetbrains.kotlin.backend.common.lower.DeclarationIrBuilder
 import org.jetbrains.kotlin.backend.common.lower.at
+import org.jetbrains.kotlin.backend.jvm.ir.erasedUpperBound
 import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.com.intellij.openapi.project.Project
 import org.jetbrains.kotlin.config.CompilerConfiguration
@@ -159,7 +160,7 @@ class LambdaReturnInlinerIrGenerationExtension(
     moduleFragment.lowerWith(object : IrFileTransformerVoidWithContext(pluginContext) {
       override fun visitSetValue(expression: IrSetValue): IrExpression {
         val result = super.visitSetValue(expression)
-        if(expression.symbol.owner.isImmutable) {
+        if (expression.symbol.owner.isImmutable) {
           val trueValue = expression.value.lastElement().safeAs<IrExpression>()?.extractFromReturnIfNeeded()
           if (trueValue is IrGetEnumValue) {
             variableToConstantValue[expression.symbol] = trueValue
@@ -173,7 +174,7 @@ class LambdaReturnInlinerIrGenerationExtension(
 
       override fun visitVariable(declaration: IrVariable): IrStatement {
         val result = super.visitVariable(declaration)
-        if(!declaration.isVar) {
+        if (!declaration.isVar) {
           val trueValue = declaration.initializer?.lastElement()?.safeAs<IrExpression>()?.extractFromReturnIfNeeded()
           if (trueValue is IrGetEnumValue) {
             variableToConstantValue[declaration.symbol] = trueValue
@@ -518,7 +519,11 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
         when (val operator = expression.operator) {
           CAST, IMPLICIT_CAST, IMPLICIT_DYNAMIC_CAST, REINTERPRET_CAST, SAFE_CAST, IMPLICIT_NOTNULL -> {
             irWhenWithMapper.mapper.forEachIndexed { index, value ->
-              newMapper.add(index, value?.takeIf { it.type.isSubtypeOf(expression.typeOperand, context.irBuiltIns) })
+              // We erase the types params because, to be honest, it really doesn't matter whether we're invoking
+              // a Function0<String?>, a Function0<String> or even a Function0<Any> at the same exact time.
+              // The type checking should be taken care of by the previous compilation steps,
+              // and so we're just trying to ensure that we have the same function type that's all
+              newMapper.add(index, value?.takeIf { it.type.erasedUpperBound.isSubclassOf(expression.typeOperand.erasedUpperBound) })
             }
             elseBranch = irElseBranch(
               when (operator) {
@@ -537,7 +542,7 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
             val valueIfInstance = irBoolean(operator == INSTANCEOF)
             val valueIfNotInstance: IrExpression = irBoolean(!valueIfInstance.value)
             irWhenWithMapper.mapper.forEachIndexed { index, value ->
-              newMapper.add(index, value?.takeIf { it.type.isSubtypeOf(expression.typeOperand, context.irBuiltIns) }
+              newMapper.add(index, value?.takeIf { it.type.erasedUpperBound.isSubclassOf(expression.typeOperand.erasedUpperBound) }
                 ?.let { valueIfInstance })
             }
             elseBranch = irElseBranch(valueIfNotInstance)
@@ -762,9 +767,12 @@ private fun IrBuilderWithScope.createWhenAccessForLambda(
   val originalFun =
     firstFunctionExpression?.function ?: return fallBackWhenImpl
   if (copiedMapper.any {
-      it?.type?.isSubtypeOf(
-        firstFunctionExpression.type,
-        context.irBuiltIns
+      // Not erasing the type parameters caused some issues specifically in ComplexLogic where a Function0<String>
+      // was deemed incompatible with a Function0<String?> simply because the latter isn't strictly a subtype of
+      // the former, but like that really does not matter since we just care about them both having the same function
+      // arity and that's it, and so erasing the type params does the job well!
+      it?.type?.erasedUpperBound?.isSubclassOf(
+        firstFunctionExpression.type.erasedUpperBound
       ) == false && !it.type.toKotlinType().isNothingOrNullableNothing()
     }) {
     return fallBackWhenImpl

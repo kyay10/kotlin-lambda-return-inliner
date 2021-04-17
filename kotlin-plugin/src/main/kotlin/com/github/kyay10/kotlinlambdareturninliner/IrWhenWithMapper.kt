@@ -14,7 +14,6 @@ import org.jetbrains.kotlin.ir.util.SymbolRenamer
 import org.jetbrains.kotlin.ir.util.TypeRemapper
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformer
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
-
 fun IrBuilderWithScope.irWhenWithMapper(
   type: IrType,
   tempInt: IrVariable,
@@ -37,7 +36,14 @@ fun IrBuilderWithScope.irBranchWithMapper(
   associatedWhen: IrWhenWithMapper? = null,
   index: Int = -1
 ) =
-  IrBranchWithMapperImpl(startOffset, endOffset, condition, result, associatedWhen, index)
+  IrBranchWithMapperImpl(
+    startOffset,
+    endOffset,
+    condition,
+    result,
+    associatedWhen,
+    index
+  )
 
 class IrWhenWithMapperImpl(
   override val startOffset: Int,
@@ -87,9 +93,7 @@ open class IrBranchWithMapperImpl(
   override var result: IrExpression = result
     set(value) {
       field = value
-      associatedWhen?.mapper?.takeIf { index >= 0 }?.let {
-        it.set(index, value)
-      }
+      associatedWhen?.mapper?.takeIf { index >= 0 }?.set(index, value)
     }
 
   constructor(condition: IrExpression, result: IrExpression, associatedWhen: IrWhenWithMapper?, index: Int = -1) :

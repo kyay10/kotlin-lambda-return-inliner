@@ -22,52 +22,69 @@ import com.tschuchort.compiletesting.PluginOption
 import com.tschuchort.compiletesting.SourceFile
 import org.jetbrains.kotlin.compiler.plugin.CommandLineProcessor
 import org.jetbrains.kotlin.compiler.plugin.ComponentRegistrar
-import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileFilter
+import java.io.OutputStream
 import java.lang.reflect.InvocationTargetException
+import kotlin.system.measureTimeMillis
 import kotlin.test.assertEquals
+
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class LambdaReturnInlinerPluginTest {
+  val outStream = ByteArrayOutputStream()
   val sampleFiles = mutableListOf<SourceFile>()
   lateinit var compiledSamples: KotlinCompilation.Result
 
-  @BeforeEach
+  @BeforeAll
   fun setupSampleFiles() {
     val sampleJvmMainDirectory = File(BuildConfig.SAMPLE_JVM_MAIN_PATH)
     sampleFiles.addAll(sampleJvmMainDirectory.listFilesRecursively { it.extension == "kt" }
       .map { SourceFile.fromPath(it) })
-    compiledSamples = compileSources(sampleFiles)
+    outStream.writeTo(System.out)
+    println(
+      "Kotlin Sample Compilation took ${
+        measureTimeMillis {
+          compiledSamples = compileSources(sampleFiles, outStream)
+        }
+      } milliseconds"
+    )
   }
 
   @Test
   fun `When multi-lambda return`() {
+    //outStream.writeTo(System.out)
     runMain(compiledSamples, "ComplexLogicKt")
     assertEquals(KotlinCompilation.ExitCode.OK, compiledSamples.exitCode)
   }
 
   @Test
   fun `Lambda Backed Functor Hierarchy`() {
+    //outStream.writeTo(System.out)
     runMain(compiledSamples, "FunctorHierarchyLambdaBackedKt")
     assertEquals(KotlinCompilation.ExitCode.OK, compiledSamples.exitCode)
   }
 
   @Test
   fun `Inlined Pairs`() {
+    //outStream.writeTo(System.out)
     runMain(compiledSamples, "InlinedPairsKt")
     assertEquals(KotlinCompilation.ExitCode.OK, compiledSamples.exitCode)
   }
 
   @Test
   fun `Scoping Functions and Nulls`() {
+    //outStream.writeTo(System.out)
     runMain(compiledSamples, "ScopingFunctionsAndNullsKt")
     assertEquals(KotlinCompilation.ExitCode.OK, compiledSamples.exitCode)
   }
 
   @Test
   fun `Efficient List Operations`() {
+    //outStream.writeTo(System.out)
     runMain(compiledSamples, "EfficientListOperationsKt")
     assertEquals(KotlinCompilation.ExitCode.OK, compiledSamples.exitCode)
   }
@@ -75,11 +92,12 @@ class LambdaReturnInlinerPluginTest {
 
 fun compile(
   sourceFiles: List<SourceFile>,
+  outputStream: OutputStream,
   plugin: ComponentRegistrar = LambdaReturnInlinerComponentRegistrar(),
   commandLineProcessor: CommandLineProcessor = LambdaReturnInlinerCommandLineProcessor(),
   className: String = "MainKt",
 ): KotlinCompilation.Result {
-  val result = compileSources(sourceFiles, plugin, commandLineProcessor)
+  val result = compileSources(sourceFiles, outputStream, plugin, commandLineProcessor)
   runMain(result, className)
   return result
 }
@@ -99,6 +117,7 @@ private fun runMain(
 
 private fun compileSources(
   sourceFiles: List<SourceFile>,
+  outputStream: OutputStream,
   plugin: ComponentRegistrar = LambdaReturnInlinerComponentRegistrar(),
   commandLineProcessor: CommandLineProcessor = LambdaReturnInlinerCommandLineProcessor()
 ) = KotlinCompilation().apply {
@@ -107,7 +126,7 @@ private fun compileSources(
   compilerPlugins = listOf(plugin)
   commandLineProcessors = listOf(commandLineProcessor)
   inheritClassPath = true
-  messageOutputStream = System.out // see diagnostics in real time
+  messageOutputStream = outputStream
   verbose = true
   kotlincArguments = kotlincArguments + "-Xallow-kotlin-package"
   pluginOptions = pluginOptions + PluginOption(
@@ -119,10 +138,11 @@ private fun compileSources(
 
 fun compile(
   sourceFile: SourceFile,
+  outputStream: OutputStream,
   plugin: ComponentRegistrar = LambdaReturnInlinerComponentRegistrar(),
   commandLineProcessor: CommandLineProcessor = LambdaReturnInlinerCommandLineProcessor()
 ): KotlinCompilation.Result {
-  return compile(listOf(sourceFile), plugin, commandLineProcessor)
+  return compile(listOf(sourceFile), outputStream, plugin, commandLineProcessor)
 }
 
 fun File.listFilesRecursively(filter: FileFilter): List<File> =

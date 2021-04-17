@@ -19,16 +19,18 @@
 
 package com.github.kyay10.kotlinlambdareturninliner
 
-import org.gradle.api.Project
 import org.gradle.api.file.Directory
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.ProjectLayout
+import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
+import org.gradle.api.provider.ProviderFactory
 import kotlin.reflect.KProperty
 
-open class LambdaReturnInlinerGradleExtension(project: Project) {
-  val generatedSourcesDirProperty: DirectoryProperty = project.objects.directoryProperty().apply {
-    convention(dir(project.provider { project.buildDir.resolve("generated/source/kotlinLambdaReturnInliner").absolutePath }))
+open class LambdaReturnInlinerGradleExtension(objects: ObjectFactory, providerFactory: ProviderFactory, projectLayout: ProjectLayout) {
+  val generatedSourcesDirProperty: DirectoryProperty = objects.directoryProperty().apply {
+    convention(projectLayout.buildDirectory.map { it.dir("generated/source/kotlinLambdaReturnInliner") })
   }
   var generatedSourcesDir: Directory by generatedSourcesDirProperty
   var generatedSourcesDirProvider: Provider<Directory> by generatedSourcesDirProperty.asProvider
