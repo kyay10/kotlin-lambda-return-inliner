@@ -55,6 +55,21 @@ class LambdaReturnInlinerPluginTest {
   }
 
   @Test
+  fun `Compilation speed without plugin`() {
+    println(
+      "Kotlin Sample Compilation took ${
+        measureTimeMillis {
+          compileSources(sampleFiles, outStream, /*plugin = object : ComponentRegistrar {
+            override fun registerProjectComponents(project: MockProject, configuration: CompilerConfiguration) {
+              
+            }
+          }*/)
+        }
+      } milliseconds"
+    )
+  }
+
+  @Test
   fun `When multi-lambda return`() {
     //outStream.writeTo(System.out)
     runMain(compiledSamples, "ComplexLogicKt")
@@ -123,7 +138,7 @@ private fun compileSources(
 ) = KotlinCompilation().apply {
   sources = sourceFiles
   useIR = true
-  compilerPlugins = listOf(plugin)
+  //compilerPlugins = listOf(plugin)
   commandLineProcessors = listOf(commandLineProcessor)
   inheritClassPath = true
   messageOutputStream = outputStream
@@ -160,3 +175,4 @@ tailrec fun List<File>.listFilesRecursively(
   }
   return dirs.ifEmpty { return files }.listFilesRecursively(filter, files)
 }
+

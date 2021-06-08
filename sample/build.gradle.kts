@@ -1,5 +1,5 @@
 plugins {
-  kotlin("multiplatform") version "1.4.31"
+  kotlin("multiplatform") version Dependencies.kotlin
   id("com.github.kyay10.kotlin-lambda-return-inliner") version "0.1.1-SNAPSHOT"
 }
 

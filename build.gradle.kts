@@ -3,7 +3,7 @@ buildscript {
 }
 plugins {
   `maven-publish`
-  kotlin("jvm") version "1.4.31" apply false
+  kotlin("jvm") version Dependencies.kotlin apply false
   id("org.jetbrains.dokka") version "0.10.1" apply false
   id("com.gradle.plugin-publish") version "0.13.0" apply false
   id("com.github.gmazzo.buildconfig") version "3.0.0" apply false

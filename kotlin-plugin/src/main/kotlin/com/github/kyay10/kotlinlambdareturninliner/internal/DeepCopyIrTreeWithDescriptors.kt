@@ -39,9 +39,6 @@ internal class DeepCopyIrTreeWithSymbolsForInliner(
     // Copy IR.
     val result = irElement.transform(copier, data = null)
 
-    // Bind newly created IR with wrapped descriptors.
-    result.acceptVoid(WrappedDescriptorPatcher)
-
     result.patchDeclarationParents(parent)
     return result
   }
@@ -145,7 +142,7 @@ internal class DeepCopyIrTreeWithSymbolsForInliner(
     }
   }
 
-  private val symbolRemapper = SymbolRemapperImpl(DescriptorsToIrRemapper)
+  private val symbolRemapper = SymbolRemapperImpl(NullDescriptorsRemapper)
   private val typeRemapper = InlinerTypeRemapper(symbolRemapper, typeArguments)
   private val copier = object : DeepCopyIrTreeWithSymbols(symbolRemapper, typeRemapper, InlinerSymbolRenamer()) {
     private fun IrType.remapTypeAndErase() = typeRemapper.remapTypeAndOptionallyErase(this, erase = true)
