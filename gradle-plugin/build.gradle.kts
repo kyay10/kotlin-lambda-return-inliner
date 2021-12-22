@@ -1,11 +1,18 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+@file:Suppress("UnstableApiUsage")
 
-plugins {
-  id("java-gradle-plugin")
-  kotlin("jvm")
-  id("com.github.gmazzo.buildconfig")
-  id("com.gradle.plugin-publish")
-}
+import com.gradle.publish.MavenCoordinates
+  import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+  import org.jetbrains.kotlin.utils.addToStdlib.cast
+
+  plugins {
+    id("java-gradle-plugin")
+    kotlin("jvm")
+    id("com.github.gmazzo.buildconfig")
+    id("com.gradle.plugin-publish")
+    id("convention.publication")
+  }
+
+
 
 dependencies {
   implementation(kotlin("stdlib"))
@@ -30,20 +37,27 @@ buildConfig {
 
 }
 
+java {
+  withSourcesJar()
+  withJavadocJar()
+}
+
 tasks.withType<KotlinCompile> {
   kotlinOptions.jvmTarget = "1.8"
+  kotlinOptions.freeCompilerArgs += "-Xinline-classes"
 }
 val pluginDescription =
   "Kotlin compiler plugin that optimises lambdas returned by inline functions and stored in local variables"
 val pluginName = "kotlin-lambda-return-inliner"
 val pluginDisplayName = "Kotlin Lambda Return Inliner compiler plugin"
+
 gradlePlugin {
   plugins {
     create(pluginName) {
-      id = "com.github.kyay10.kotlin-lambda-return-inliner"
+      id = "io.github.kyay10.kotlin-lambda-return-inliner"
       displayName = pluginDisplayName
       description = pluginDescription
-      implementationClass = "com.github.kyay10.kotlinlambdareturninliner.LambdaReturnInlinerGradlePlugin"
+      implementationClass = "io.github.kyay10.kotlinlambdareturninliner.LambdaReturnInlinerGradlePlugin"
     }
   }
 }
@@ -52,7 +66,7 @@ pluginBundle {
   vcsUrl = website
   description = pluginDescription
 
-  version = "0.1.1-SNAPSHOT"
+  version = rootProject.version
   (plugins) {
     pluginName {
       displayName = pluginDisplayName
@@ -70,11 +84,14 @@ pluginBundle {
         "functional programming",
         "graphics"
       )
-      version = "0.1.1-SNAPSHOT"
+      version = rootProject.version.cast()
     }
   }
-}
-val compileKotlin: KotlinCompile by tasks
-compileKotlin.kotlinOptions {
-  freeCompilerArgs = listOf("-Xinline-classes")
+  val mavenCoordinatesConfiguration = { coords: MavenCoordinates ->
+    coords.groupId = group.cast()
+    coords.artifactId = name
+    coords.version = version.cast()
+  }
+
+  mavenCoordinates(mavenCoordinatesConfiguration)
 }

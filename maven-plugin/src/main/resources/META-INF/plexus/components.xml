@@ -1,0 +1,12 @@
+<component-set>
+    <components>
+        <component>
+            <role>org.jetbrains.kotlin.maven.KotlinMavenPluginExtension</role>
+            <role-hint>kotlin-lambda-return-inliner</role-hint>
+            <implementation>
+                io.github.kyay10.kotlinlambdareturninliner.LambdaReturnInlinerMavenPlugin
+            </implementation>
+            <configuration/>
+        </component>
+    </components>
+</component-set>

@@ -1,6 +1,8 @@
 # Gradle
 build/
 .gradle/
+local.properties
+secret_key_ring_file.gpg
 
 # IDEA
 out/

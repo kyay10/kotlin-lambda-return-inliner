@@ -1,17 +1,29 @@
 plugins {
   kotlin("multiplatform")
+  id("org.jetbrains.dokka")
+  id("convention.publication")
 }
 
 repositories {
   mavenCentral()
 }
+val dokkaHtml by tasks.getting(org.jetbrains.dokka.gradle.DokkaTask::class)
 
+val javadocJar: TaskProvider<Jar> by tasks.registering(Jar::class) {
+  dependsOn(dokkaHtml)
+  archiveClassifier.set("javadoc")
+  from(dokkaHtml.outputDirectory)
+}
 kotlin {
-
+  targets.all {
+    compilations.all {
+      kotlinOptions.freeCompilerArgs += "-Xallow-kotlin-package"
+    }
+  }
   jvm {
+    withJava()
     compilations.all {
       kotlinOptions.jvmTarget = "1.8"
-      kotlinOptions.useIR = true
     }
     testRuns["test"].executionTask.configure {
       useJUnit()
@@ -52,6 +64,7 @@ kotlin {
     val commonMain by getting {
       dependencies {
         implementation(kotlin("stdlib-common"))
+        implementation("com.google.code.findbugs:jsr305:3.0.2")
       }
     }
     val commonTest by getting {
@@ -59,6 +72,14 @@ kotlin {
         implementation(kotlin("test-common"))
         implementation(kotlin("test-annotations-common"))
       }
+    }
+  }
+}
+
+publishing {
+  publications {
+    publications.withType<MavenPublication> {
+      artifact(javadocJar)
     }
   }
 }

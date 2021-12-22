@@ -6,30 +6,42 @@ plugins {
   kotlin("jvm")
   kotlin("kapt")
   id("com.github.gmazzo.buildconfig")
+  id("convention.publication")
 }
 
 repositories {
   mavenCentral()
 }
 dependencies {
-  implementation("org.ow2.asm:asm:9.1")
+  implementation("org.ow2.asm:asm:9.2")
   compileOnly("org.jetbrains.kotlin:kotlin-compiler-embeddable")
+  implementation("org.jetbrains.kotlin:kotlin-reflect")
 
-  kapt("com.google.auto.service:auto-service:1.0-rc7")
-  compileOnly("com.google.auto.service:auto-service-annotations:1.0-rc7")
+  kapt("com.google.auto.service:auto-service:1.0")
+  compileOnly("com.google.auto.service:auto-service-annotations:1.0")
 
   // Needed for running tests since the tests inherit out classpath
-  api(project(":prelude"))
+  implementation(project(":prelude"))
 
   testImplementation(kotlin("test-junit5"))
   testImplementation(platform("org.junit:junit-bom:5.7.1"))
-  testImplementation("org.junit.jupiter:junit-jupiter")
+  testImplementation("org.junit.jupiter:junit-jupiter:5.7.2")
   testImplementation("org.jetbrains.kotlin:kotlin-compiler-embeddable")
-  testImplementation("com.github.tschuchortdev:kotlin-compile-testing:1.3.4")
+  testImplementation("com.github.tschuchortdev:kotlin-compile-testing:1.4.3")
 }
 
 buildConfig {
   packageName(group.toString().replace("-", ""))
+  buildConfigField(
+    "String",
+    "INLINE_INVOKE_FQNAME",
+    "\"${group.toString().replace("-", "")}.inlineInvoke\""
+  )
+  buildConfigField(
+    "String",
+    "CONTAINS_COPIED_DECLARATIONS_ANNOTATION_FQNAME",
+    "\"${group.toString().replace("-", "")}.ContainsCopiedDeclarations\""
+  )
   buildConfigField(
     "String",
     "KOTLIN_PLUGIN_ID",
@@ -50,6 +62,7 @@ buildConfig {
 tasks.withType<KotlinCompile> {
   kotlinOptions.jvmTarget = "1.8"
   kotlinOptions.freeCompilerArgs += "-Xopt-in=kotlin.RequiresOptIn"
+  kotlinOptions.freeCompilerArgs += "-Xinline-classes"
 }
 
 java {
@@ -68,9 +81,4 @@ tasks.withType<Test> {
   testLogging {
     events("passed", "skipped", "failed")
   }
-}
-
-val compileKotlin: KotlinCompile by tasks
-compileKotlin.kotlinOptions {
-    freeCompilerArgs = listOf("-Xinline-classes")
 }

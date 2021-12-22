@@ -1,4 +1,4 @@
-import com.github.kyay10.kotlinlambdareturninliner.LambdaBacked
+import io.github.kyay10.kotlinlambdareturninliner.LambdaBacked
 
 // K is used to ensure that FunctorIn and FunctorOut conform to the same higher-kinded type. It's in because imagine
 // that you internally produce a Some for example that you want to coerce to an Option, this allows you to do so safely
