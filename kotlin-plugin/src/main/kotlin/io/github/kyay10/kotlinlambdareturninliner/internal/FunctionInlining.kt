@@ -1,4 +1,4 @@
-@file:Suppress("MemberVisibilityCanBePrivate")
+@file:Suppress("MemberVisibilityCanBePrivate", "ReplaceNotNullAssertionWithElvisReturn")
 
 package io.github.kyay10.kotlinlambdareturninliner.internal
 
@@ -24,7 +24,6 @@ import org.jetbrains.kotlin.backend.common.ir.allParametersCount
 import org.jetbrains.kotlin.backend.common.ir.isPure
 import org.jetbrains.kotlin.backend.common.lower.DeclarationIrBuilder
 import org.jetbrains.kotlin.backend.common.lower.at
-import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
@@ -34,7 +33,6 @@ import org.jetbrains.kotlin.ir.builders.irReturn
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
-import org.jetbrains.kotlin.ir.symbols.IrConstructorSymbol
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
 import org.jetbrains.kotlin.ir.symbols.IrValueSymbol
@@ -47,11 +45,9 @@ import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
-import org.jetbrains.kotlin.js.descriptorUtils.getJetTypeFqName
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtPsiUtil
-import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameOrNull
 import org.jetbrains.kotlin.util.OperatorNameConventions
 
 fun IrValueParameter.isInlineParameter(type: IrType = this.type) =
@@ -63,24 +59,13 @@ interface InlineFunctionResolver {
   fun getFunctionDeclaration(symbol: IrFunctionSymbol): IrFunction
 }
 
-fun IrFunction.isTopLevelInPackage(name: String, packageName: String): Boolean {
-  if (name != this.name.asString()) return false
-
-  val containingDeclaration = parent as? IrPackageFragment ?: return false
-  val packageFqName = containingDeclaration.fqName.asString()
-  return packageName == packageFqName
-}
-
 open class DefaultInlineFunctionResolver(open val context: IrPluginContext) : InlineFunctionResolver {
   override fun getFunctionDeclaration(symbol: IrFunctionSymbol): IrFunction {
-    val function = symbol.owner
-    val languageVersionSettings = context.languageVersionSettings
-    // TODO: Remove these hacks when coroutine intrinsics are fixed.
     return (symbol.owner as? IrSimpleFunction)?.resolveFakeOverride() ?: symbol.owner
   }
 }
 
-private val IrFunction.needsInlining get() = (this.isInline || (this as? IrSimpleFunction)?.isOperator == true) //&& !this.isExternal
+private val IrFunction.needsInlining get() = (this.isInline || (this as? IrSimpleFunction)?.isOperator == true)
 
 private class Inliner(
   val transformer: IrElementTransformerVoidWithContext,
@@ -237,7 +222,7 @@ private class Inliner(
       val function = irFunctionReference.symbol.owner
       val functionParameters = function.explicitParameters
       val boundFunctionParameters = irFunctionReference.getArgumentsWithIr()
-      val unboundFunctionParameters = functionParameters - boundFunctionParameters.map { it.first }
+      val unboundFunctionParameters = functionParameters - boundFunctionParameters.map { it.first }.toSet()
       val boundFunctionParametersMap = boundFunctionParameters.associate { it.first to it.second }
 
       var unboundIndex = 0
@@ -650,65 +635,6 @@ fun IrElementTransformerVoidWithContext.inline(
     ?: allScopes.map { it.irElement }.filterIsInstance<IrDeclaration>().lastOrNull()?.parent
 
   val inliner = Inliner(this, expression, actualCallee, currentScope, parent, context)
-  return inliner.inline()//.transform(ReturnableBlockTransformer(context, currentScope.scope.scopeOwnerSymbol), null)
+  return inliner.inline()
 }
 
-@ObsoleteDescriptorBasedAPI
-class IrBasedDescriptorRemapper(val context: IrPluginContext) : DescriptorsRemapper {
-  override fun remapDeclaredClass(descriptor: ClassDescriptor): ClassDescriptor? {
-    return descriptor.fqNameOrNull()?.let { context.referenceClass(it)?.descriptor }
-  }
-
-  override fun remapDeclaredConstructor(descriptor: ClassConstructorDescriptor): ClassConstructorDescriptor? {
-    return descriptor.fqNameOrNull()?.let {
-      context.referenceConstructors(it).map(IrConstructorSymbol::descriptor).singleOrNull {
-        it.valueParameters.size == descriptor.valueParameters.size && it.valueParameters.allIndexed { index, param ->
-          val otherParam = descriptor.valueParameters[index]
-          param.name == otherParam.name && param.type.getJetTypeFqName(true) == otherParam.type.getJetTypeFqName(true)
-        }
-          && it.typeParameters.size == descriptor.typeParameters.size && it.typeParameters.allIndexed { index, param ->
-          val otherParam = descriptor.typeParameters[index]
-          param.name == otherParam.name && param.defaultType.getJetTypeFqName(true) == otherParam.defaultType.getJetTypeFqName(
-            true
-          )
-        }
-      }
-    }
-  }
-
-  override fun remapDeclaredEnumEntry(descriptor: ClassDescriptor): ClassDescriptor? {
-    return descriptor.fqNameOrNull()?.let { context.referenceClass(it)?.descriptor }
-  }
-
-  override fun remapDeclaredExternalPackageFragment(descriptor: PackageFragmentDescriptor): PackageFragmentDescriptor {
-    return context.moduleDescriptor.getPackage(descriptor.fqName).fragments.firstOrNull { it::class == descriptor::class }
-      ?: descriptor
-  }
-
-  override fun remapDeclaredFilePackageFragment(descriptor: PackageFragmentDescriptor): PackageFragmentDescriptor {
-    return context.moduleDescriptor.getPackage(descriptor.fqName).fragments.firstOrNull { it::class == descriptor::class }
-      ?: descriptor
-  }
-
-  override fun remapDeclaredSimpleFunction(descriptor: FunctionDescriptor): FunctionDescriptor? {
-    return descriptor.fqNameOrNull()?.let {
-      context.referenceFunctions(it).map(IrFunctionSymbol::descriptor).singleOrNull {
-        it.valueParameters.size == descriptor.valueParameters.size && it.valueParameters.allIndexed { index, param ->
-          val otherParam = descriptor.valueParameters[index]
-          param.name == otherParam.name && param.type.getJetTypeFqName(true) == otherParam.type.getJetTypeFqName(true)
-            && it.returnType?.getJetTypeFqName(true) == otherParam.returnType?.getJetTypeFqName(true)
-        }
-          && it.typeParameters.size == descriptor.typeParameters.size && it.typeParameters.allIndexed { index, param ->
-          val otherParam = descriptor.typeParameters[index]
-          param.name == otherParam.name && param.defaultType.getJetTypeFqName(true) == otherParam.defaultType.getJetTypeFqName(
-            true
-          )
-        }
-      }
-    }
-  }
-
-  override fun remapDeclaredTypeAlias(descriptor: TypeAliasDescriptor): TypeAliasDescriptor? {
-    return descriptor.fqNameOrNull()?.let { context.referenceTypeAlias(it)?.descriptor }
-  }
-}

@@ -132,7 +132,10 @@ fun IrType.equalsOrIsTypeParameterLike(
 ): Boolean =
   this == otherType
     || classifierOrNull.safeAs<IrTypeParameterSymbol>()?.owner?.name?.equals(otherType.classifierOrNull.safeAs<IrTypeParameterSymbol>()?.owner?.name) == true
-    || (this is IrSimpleType && otherType is IrSimpleType && FqNameEqualityChecker.areEqual(this.classifier, otherType.classifier) && arguments.allIndexed { index, argument ->
+    || (this is IrSimpleType && otherType is IrSimpleType && FqNameEqualityChecker.areEqual(
+    this.classifier,
+    otherType.classifier
+  ) && arguments.allIndexed { index, argument ->
     otherType.arguments[index].typeOrNull?.let {
       argument.typeOrNull?.equalsOrIsTypeParameterLike(
         it

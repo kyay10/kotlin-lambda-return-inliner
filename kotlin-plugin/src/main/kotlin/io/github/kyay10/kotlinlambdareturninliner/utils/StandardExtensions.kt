@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package io.github.kyay10.kotlinlambdareturninliner.utils
 
 import kotlin.contracts.ExperimentalContracts
@@ -39,7 +41,7 @@ infix fun <A, B> A?.toNotNull(that: B?): Pair<A, B>? = this?.let { a -> that?.le
 fun <T> Array<out T>?.toListOrEmpty(): List<T> = this?.toList() ?: emptyList()
 
 inline fun <T> Boolean.ifTrue(block: () -> T): T? {
-  return if(this) block() else null
+  return if (this) block() else null
 }
 
 operator fun String.times(amount: Int): String = repeat(amount)
@@ -66,6 +68,7 @@ inline fun <T, R, C : MutableCollection<in R>> List<T>.flatMapTo(destination: C,
 inline fun <T, R> List<T>.flatMap(transform: (T) -> Iterable<R>): List<R> {
   return flatMapTo(ArrayList(), transform)
 }
+
 /**
  * Appends all elements yielded from results of [transform] function being invoked on each element of original collection, to the given [destination].
  */
@@ -93,7 +96,7 @@ inline fun <T, R> List<T>.flatMap(transform: (T) -> Array<R>): List<R> {
   return flatMapTo(ArrayList(), transform)
 }
 
-inline fun <T> id(t: T): T = t
+fun <T> id(t: T): T = t
 
 /**
  * Returns `true` if all elements match the given [predicate].

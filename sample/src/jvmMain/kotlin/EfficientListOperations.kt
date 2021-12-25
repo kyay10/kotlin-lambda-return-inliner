@@ -7,6 +7,7 @@ inline val <T> ListInTheProcessOfBuilding<T>.materialize: List<T> get() = this(n
 inline fun <T> ListInTheProcessOfBuilding<T>.addTo(list: MutableList<T>) {
   this(list, -3)
 }
+
 @OptIn(ExperimentalStdlibApi::class)
 inline fun <T> ListInTheProcessOfBuilding(
   size: Int,

@@ -34,7 +34,6 @@ buildConfig {
     "KOTLIN_PLUGIN_ID",
     "\"${rootProject.extra["kotlin_plugin_id"].toString().replace("-", "")}\""
   )
-  buildConfigField("String", "KOTLIN_PLUGIN_HINT", "\"${rootProject.name}\"")
 }
 
 tasks.withType<KotlinCompile> {

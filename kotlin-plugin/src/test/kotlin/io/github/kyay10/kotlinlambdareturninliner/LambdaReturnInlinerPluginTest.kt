@@ -56,52 +56,32 @@ class LambdaReturnInlinerPluginTest {
     )
   }
 
-/*  @Test
-  fun `Compilation speed without plugin`() {
-    println(
-      "Kotlin Sample Compilation took ${
-        measureTimeMillis {
-          compileSources(sampleFiles, outStream, null*//*plugin = object : ComponentRegistrar {
-            override fun registerProjectComponents(project: MockProject, configuration: CompilerConfiguration) {
-
-            }
-          }*//*)
-        }
-      } milliseconds"
-    )
-  }*/
-
   @Test
   fun `When multi-lambda return`() {
-    //outStream.writeTo(System.out)
     runMain(compiledSamples, "ComplexLogicKt")
     assertEquals(KotlinCompilation.ExitCode.OK, compiledSamples.exitCode)
   }
 
   @Test
   fun `Lambda Backed Functor Hierarchy`() {
-    //outStream.writeTo(System.out)
     runMain(compiledSamples, "FunctorHierarchyLambdaBackedKt")
     assertEquals(KotlinCompilation.ExitCode.OK, compiledSamples.exitCode)
   }
 
   @Test
   fun `Inlined Pairs`() {
-    //outStream.writeTo(System.out)
     runMain(compiledSamples, "InlinedPairsKt")
     assertEquals(KotlinCompilation.ExitCode.OK, compiledSamples.exitCode)
   }
 
   @Test
   fun `Scoping Functions and Nulls`() {
-    //outStream.writeTo(System.out)
     runMain(compiledSamples, "ScopingFunctionsAndNullsKt")
     assertEquals(KotlinCompilation.ExitCode.OK, compiledSamples.exitCode)
   }
 
   @Test
   fun `Efficient List Operations`() {
-    //outStream.writeTo(System.out)
     runMain(compiledSamples, "EfficientListOperationsKt")
     assertEquals(KotlinCompilation.ExitCode.OK, compiledSamples.exitCode)
   }
@@ -128,7 +108,7 @@ private fun runMain(
   try {
     main.invoke(null)
   } catch (e: InvocationTargetException) {
-    throw e.targetException!!
+    throw e.targetException
   }
 }
 

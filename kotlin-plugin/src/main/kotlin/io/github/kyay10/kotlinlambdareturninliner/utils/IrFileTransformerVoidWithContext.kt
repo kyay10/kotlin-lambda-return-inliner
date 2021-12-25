@@ -31,6 +31,7 @@ open class IrFileTransformerVoidWithContext(val context: IrPluginContext) : IrEl
     startOffset: Int = UNDEFINED_OFFSET, endOffset: Int = UNDEFINED_OFFSET
   ) = DeclarationIrBuilder(generatorContext, symbol, startOffset, endOffset)
 
-  val IrFunctionAccessExpression.isInvokeCall: Boolean get() = _isInvokeCall &&
-    currentFunction?.irElement.safeAs<IrFunction>()?.fqNameWhenAvailable != INLINE_INVOKE_FQNAME
+  val IrFunctionAccessExpression.isInvokeCall: Boolean
+    get() = _isInvokeCall &&
+      currentFunction?.irElement.safeAs<IrFunction>()?.fqNameWhenAvailable != INLINE_INVOKE_FQNAME
 }

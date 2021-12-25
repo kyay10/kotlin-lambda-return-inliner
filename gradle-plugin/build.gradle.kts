@@ -1,16 +1,16 @@
 @file:Suppress("UnstableApiUsage")
 
 import com.gradle.publish.MavenCoordinates
-  import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-  import org.jetbrains.kotlin.utils.addToStdlib.cast
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.utils.addToStdlib.cast
 
-  plugins {
-    id("java-gradle-plugin")
-    kotlin("jvm")
-    id("com.github.gmazzo.buildconfig")
-    id("com.gradle.plugin-publish")
-    id("convention.publication")
-  }
+plugins {
+  id("java-gradle-plugin")
+  kotlin("jvm")
+  id("com.github.gmazzo.buildconfig")
+  id("com.gradle.plugin-publish")
+  id("convention.publication")
+}
 
 
 

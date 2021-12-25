@@ -39,7 +39,8 @@ import org.jetbrains.kotlin.resolve.BindingContext as UncoolBindingContext
 
 private const val UNINITIALIZED_STRING = "UNINITIALIZED_STRING"
 
-inline class BindingContext(val originalContext: UncoolBindingContext) : UncoolBindingContext {
+@JvmInline
+value class BindingContext(val originalContext: UncoolBindingContext) : UncoolBindingContext {
   override fun getDiagnostics(): Diagnostics {
     return originalContext.diagnostics
   }
@@ -371,7 +372,16 @@ inline class BindingContext(val originalContext: UncoolBindingContext) : UncoolB
         originalContext
       )
     }
-  fun KtExpression.getCompileTimeConstant(takeUpConstValsAsConst: Boolean, shouldInlineConstVals: Boolean): ConstantValue<*>? = org.jetbrains.kotlin.resolve.jvm.getCompileTimeConstant(this, originalContext, takeUpConstValsAsConst, shouldInlineConstVals)
+
+  fun KtExpression.getCompileTimeConstant(
+    takeUpConstValsAsConst: Boolean,
+    shouldInlineConstVals: Boolean
+  ): ConstantValue<*>? = org.jetbrains.kotlin.resolve.jvm.getCompileTimeConstant(
+    this,
+    originalContext,
+    takeUpConstValsAsConst,
+    shouldInlineConstVals
+  )
 
 
 }

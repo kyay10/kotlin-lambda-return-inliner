@@ -16,6 +16,7 @@ import org.jetbrains.kotlin.ir.util.SymbolRenamer
 import org.jetbrains.kotlin.ir.util.TypeRemapper
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformer
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
+
 fun IrBuilderWithScope.irWhenWithMapper(
   type: IrType,
   tempInt: IrVariable,

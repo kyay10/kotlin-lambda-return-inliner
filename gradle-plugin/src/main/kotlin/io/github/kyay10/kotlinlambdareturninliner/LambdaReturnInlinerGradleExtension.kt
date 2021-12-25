@@ -25,10 +25,12 @@ import org.gradle.api.file.ProjectLayout
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
-import org.gradle.api.provider.ProviderFactory
 import kotlin.reflect.KProperty
 
-open class LambdaReturnInlinerGradleExtension(objects: ObjectFactory, providerFactory: ProviderFactory, projectLayout: ProjectLayout) {
+open class LambdaReturnInlinerGradleExtension(
+  objects: ObjectFactory,
+  projectLayout: ProjectLayout
+) {
   val generatedSourcesDirProperty: DirectoryProperty = objects.directoryProperty().apply {
     convention(projectLayout.buildDirectory.map { it.dir("generated/source/kotlinLambdaReturnInliner") })
   }
