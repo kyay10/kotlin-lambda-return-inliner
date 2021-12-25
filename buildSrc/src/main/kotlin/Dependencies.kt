@@ -1,3 +1,3 @@
 object Dependencies {
-  const val kotlin = "1.5.30"
+  val kotlin = "1.6.10"
 }

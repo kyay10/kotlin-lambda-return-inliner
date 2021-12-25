@@ -4,7 +4,7 @@ buildscript {
 plugins {
   `maven-publish`
   kotlin("jvm") version Dependencies.kotlin apply false
-  id("org.jetbrains.dokka") version "1.5.0" apply false
+  id("org.jetbrains.dokka") version "1.6.0" apply false
   id("com.gradle.plugin-publish") version "0.13.0" apply false
   id("com.github.gmazzo.buildconfig") version "3.0.0" apply false
 }

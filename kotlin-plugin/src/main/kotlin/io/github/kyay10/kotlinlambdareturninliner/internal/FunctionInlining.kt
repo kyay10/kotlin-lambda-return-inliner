@@ -8,29 +8,28 @@ package io.github.kyay10.kotlinlambdareturninliner.internal
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  *
  * Copied and modified from the Kotlin compiler source code at: https://github.com/JetBrains/kotlin/blob/1.4.30/compiler/ir/backend.common/src/org/jetbrains/kotlin/backend/common/lower/inline/FunctionInlining.kt
+ * and at https://github.com/JetBrains/kotlin/blob/v1.6.10/compiler/ir/backend.common/src/org/jetbrains/kotlin/backend/common/lower/inline/FunctionInlining.kt
  */
 
 
+import io.github.kyay10.kotlinlambdareturninliner.utils.allIndexed
 import io.github.kyay10.kotlinlambdareturninliner.utils.equalsOrIsTypeParameterLike
 import io.github.kyay10.kotlinlambdareturninliner.utils.flatMap
-import io.github.kyay10.kotlinlambdareturninliner.utils.id
 import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
 import org.jetbrains.kotlin.backend.common.ScopeWithIr
 import org.jetbrains.kotlin.backend.common.extensions.IrPluginContext
 import org.jetbrains.kotlin.backend.common.ir.Symbols
 import org.jetbrains.kotlin.backend.common.ir.allParameters
 import org.jetbrains.kotlin.backend.common.ir.allParametersCount
+import org.jetbrains.kotlin.backend.common.ir.isPure
 import org.jetbrains.kotlin.backend.common.lower.DeclarationIrBuilder
-import org.jetbrains.kotlin.config.LanguageFeature
-import org.jetbrains.kotlin.config.LanguageVersionSettings
-import org.jetbrains.kotlin.config.coroutinesIntrinsicsPackageFqName
+import org.jetbrains.kotlin.backend.common.lower.at
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.backend.js.utils.isDispatchReceiver
-import org.jetbrains.kotlin.ir.builders.Scope
 import org.jetbrains.kotlin.ir.builders.irReturn
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
@@ -72,21 +71,12 @@ fun IrFunction.isTopLevelInPackage(name: String, packageName: String): Boolean {
   return packageName == packageFqName
 }
 
-fun IrFunction.isBuiltInIntercepted(languageVersionSettings: LanguageVersionSettings): Boolean =
-  !languageVersionSettings.supportsFeature(LanguageFeature.ReleaseCoroutines) &&
-    isTopLevelInPackage("intercepted", languageVersionSettings.coroutinesIntrinsicsPackageFqName().asString())
-
 open class DefaultInlineFunctionResolver(open val context: IrPluginContext) : InlineFunctionResolver {
   override fun getFunctionDeclaration(symbol: IrFunctionSymbol): IrFunction {
     val function = symbol.owner
     val languageVersionSettings = context.languageVersionSettings
     // TODO: Remove these hacks when coroutine intrinsics are fixed.
-    return when {
-      function.isBuiltInIntercepted(languageVersionSettings) ->
-        error("Continuation.intercepted is not available with release coroutines")
-
-      else -> (symbol.owner as? IrSimpleFunction)?.resolveFakeOverride() ?: symbol.owner
-    }
+    return (symbol.owner as? IrSimpleFunction)?.resolveFakeOverride() ?: symbol.owner
   }
 }
 
@@ -96,7 +86,7 @@ private class Inliner(
   val transformer: IrElementTransformerVoidWithContext,
   val callSite: IrFunctionAccessExpression,
   val callee: IrFunction,
-  val currentScope: Scope,
+  val currentScope: ScopeWithIr,
   val parent: IrDeclarationParent?,
   val context: IrPluginContext
 ) {
@@ -117,18 +107,6 @@ private class Inliner(
 
   fun inline() = inlineFunction(callSite, callee, true)
 
-  /**
-   * TODO: JVM inliner crashed on attempt inline this function from transform.kt with:
-   *  j.l.IllegalStateException: Couldn't obtain compiled function body for
-   *  public inline fun <reified T : org.jetbrains.kotlin.ir.IrElement> kotlin.collections.MutableList<T>.transform...
-   */
-  private inline fun <reified T : IrElement> MutableList<T>.transform(transformation: (T) -> IrElement) {
-    forEachIndexed { i, item ->
-      set(i, transformation(item) as T)
-    }
-  }
-
-
   private fun inlineFunction(
     callSite: IrFunctionAccessExpression,
     callee: IrFunction,
@@ -136,6 +114,13 @@ private class Inliner(
   ): IrExpression {
 
     val copiedCallee = (copyIrElement.copy(callee) as IrFunction).apply {
+
+      // It's a hack to overtake another hack in PIR. Due to PersistentIrFactory registers every created declaration
+      // there also get temporary declaration like this which leads to some unclear behaviour. Since I am not aware
+      // enough about PIR internals the simplest way seemed to me is to unregister temporary function. Hope it is going
+      // to be removed ASAP along with registering every PIR declaration.
+      factory.unlistFunction(this)
+
       parent = callee.parent
       if (performRecursiveInline) {
         body?.transformChildrenVoid(transformer)
@@ -159,8 +144,11 @@ private class Inliner(
     val irBuilder = DeclarationIrBuilder(context, irReturnableBlockSymbol, endOffset, endOffset)
 
     val transformer = ParameterSubstitutor()
-    statements.transform { it.transform(transformer, data = null) }
-    statements.addAll(0, evaluationStatements)
+
+    val newStatements = mutableListOf<IrStatement>()
+
+    newStatements.addAll(evaluationStatements)
+    statements.mapTo(newStatements) { it.transform(transformer, data = null) as IrStatement }
 
     return IrReturnableBlockImpl(
       startOffset = callSite.startOffset,
@@ -168,7 +156,7 @@ private class Inliner(
       type = callSite.type,
       symbol = irReturnableBlockSymbol,
       origin = null,
-      statements = statements,
+      statements = newStatements,
       inlineFunctionSymbol = callee.symbol
     ).apply {
       transformChildrenVoid(object : IrElementTransformerVoid() {
@@ -176,7 +164,7 @@ private class Inliner(
           expression.transformChildrenVoid(this)
 
           if (expression.returnTargetSymbol == copiedCallee.symbol)
-            return irBuilder.irReturn(expression.value)
+            return irBuilder.at(expression).irReturn(expression.value)
           return expression
         }
       })
@@ -337,7 +325,7 @@ private class Inliner(
         for (index in 0 until irFunctionReference.typeArgumentsCount)
           putTypeArgument(index, irFunctionReference.getTypeArgument(index))
       }.implicitCastIfNeededTo(irCall.type)
-      return /*this@FunctionInlining.visitExpression(*/super.visitExpression(immediateCall)/*) TODO: figure out what this line was meant to do, and if it is required, re-create the structure of the FunctionInlining class to make it work again.*/
+      return /*this@FunctionInlining.visitExpression(*/transformer.visitExpression(immediateCall)/*) TODO: figure out what this line was meant to do, and if it is required, re-create the structure of the FunctionInlining class to make it work again.*/
     }
 
     override fun visitElement(element: IrElement) = element.accept(this, null)
@@ -476,7 +464,7 @@ private class Inliner(
         )
       } else {
         val newVariable =
-          currentScope.createTemporaryVariable(
+          currentScope.scope.createTemporaryVariable(
             irExpression = it.argumentExpression.transform( // Arguments may reference the previous ones - substitute them.
               substitutor,
               data = null
@@ -526,22 +514,28 @@ private class Inliner(
       // Arguments may reference the previous ones - substitute them.
       val variableInitializer = argument.argumentExpression.transform(substitutor, data = null)
 
-      val newVariable =
-        currentScope.createTemporaryVariable(
-          irExpression = IrBlockImpl(
-            variableInitializer.startOffset,
-            variableInitializer.endOffset,
-            variableInitializer.type,
-            InlinerExpressionLocationHint(callee.symbol)
-          ).apply {
-            statements.add(variableInitializer)
-          },
-          nameHint = callee.symbol.owner.name.toString(),
-          isMutable = false
-        )
+      val argumentExtracted = !argument.argumentExpression.isPure(false/*, context = context*/) // Needs backend context
 
-      evaluationStatements.add(newVariable)
-      substituteMap[argument.parameter] = IrGetValueWithoutLocation(newVariable.symbol)
+      if (!argumentExtracted) {
+        substituteMap[argument.parameter] = variableInitializer
+      } else {
+        val newVariable =
+          currentScope.scope.createTemporaryVariable(
+            irExpression = IrBlockImpl(
+              variableInitializer.startOffset,
+              variableInitializer.endOffset,
+              variableInitializer.type,
+              InlinerExpressionLocationHint((currentScope.irElement as IrSymbolOwner).symbol)
+            ).apply {
+              statements.add(variableInitializer)
+            },
+            nameHint = callee.symbol.owner.name.toString(),
+            isMutable = false
+          )
+
+        evaluationStatements.add(newVariable)
+        substituteMap[argument.parameter] = IrGetValueWithoutLocation(newVariable.symbol)
+      }
     }
     return evaluationStatements
   }
@@ -563,12 +557,11 @@ private class IrGetValueWithoutLocation(
   override fun <R, D> accept(visitor: IrElementVisitor<R, D>, data: D) =
     visitor.visitGetValue(this, data)
 
-/*  override fun copy(): IrGetValue {
-    TODO("not implemented")
-  }*/
-
   fun withLocation(startOffset: Int, endOffset: Int) =
     IrGetValueImpl(startOffset, endOffset, type, symbol, origin)
+
+  override fun copyWithOffsets(newStartOffset: Int, newEndOffset: Int): IrGetValue =
+    withLocation(newStartOffset, newEndOffset)
 }
 
 class InlinerExpressionLocationHint(val inlineAtSymbol: IrSymbol) : IrStatementOrigin {
@@ -587,7 +580,7 @@ class InlinerExpressionLocationHint(val inlineAtSymbol: IrSymbol) : IrStatementO
 fun IrElementTransformerVoidWithContext.inline(
   expression: IrFunctionAccessExpression,
   allScopes: MutableList<ScopeWithIr>,
-  currentScope: Scope,
+  currentScope: ScopeWithIr,
   context: IrPluginContext,
   shadowsContext: IrPluginContext?,
   renamesMap: MutableMap<String, String>
@@ -638,19 +631,19 @@ fun IrElementTransformerVoidWithContext.inline(
         inlineFunctionResolver.getFunctionDeclaration(it)
       }
   }.orEmpty().ifEmpty { sequenceOf(actualCalleeCandidate) }).firstOrNull {
-    !it.isExternal && it.allParametersCount == actualCalleeCandidate.allParametersCount && it.allParameters.mapIndexed { index, parameter ->
+    !it.isExternal && it.allParametersCount == actualCalleeCandidate.allParametersCount && it.allParameters.allIndexed { index, parameter ->
       val actualParameter = actualCalleeCandidate.allParameters[index]
       actualParameter.type.equalsOrIsTypeParameterLike(parameter.type)
-    }.all(::id) &&
+    } &&
       it.returnType.equalsOrIsTypeParameterLike(actualCalleeCandidate.returnType) &&
       it.typeParameters.size == actualCalleeCandidate.typeParameters.size &&
-      it.typeParameters.mapIndexed { index, parameter ->
+      it.typeParameters.allIndexed { index, parameter ->
         val actualParameter = actualCalleeCandidate.typeParameters[index]
-        actualParameter.name == parameter.name && actualParameter.variance == parameter.variance && actualParameter.superTypes.mapIndexed { superTypeIndex, superType ->
+        actualParameter.name == parameter.name && actualParameter.variance == parameter.variance && actualParameter.superTypes.allIndexed { superTypeIndex, superType ->
           val otherSuperType = parameter.superTypes[superTypeIndex]
           superType.equalsOrIsTypeParameterLike(otherSuperType)
-        }.all(::id)
-      }.all(::id)
+        }
+      }
   } ?: return expression
 
   val parent = allScopes.map { it.irElement }.filterIsInstance<IrDeclarationParent>().lastOrNull()
@@ -669,17 +662,17 @@ class IrBasedDescriptorRemapper(val context: IrPluginContext) : DescriptorsRemap
   override fun remapDeclaredConstructor(descriptor: ClassConstructorDescriptor): ClassConstructorDescriptor? {
     return descriptor.fqNameOrNull()?.let {
       context.referenceConstructors(it).map(IrConstructorSymbol::descriptor).singleOrNull {
-        it.valueParameters.size == descriptor.valueParameters.size && it.valueParameters.mapIndexed { index, param ->
+        it.valueParameters.size == descriptor.valueParameters.size && it.valueParameters.allIndexed { index, param ->
           val otherParam = descriptor.valueParameters[index]
           param.name == otherParam.name && param.type.getJetTypeFqName(true) == otherParam.type.getJetTypeFqName(true)
         }
-          .all(::id) && it.typeParameters.size == descriptor.typeParameters.size && it.typeParameters.mapIndexed { index, param ->
+          && it.typeParameters.size == descriptor.typeParameters.size && it.typeParameters.allIndexed { index, param ->
           val otherParam = descriptor.typeParameters[index]
           param.name == otherParam.name && param.defaultType.getJetTypeFqName(true) == otherParam.defaultType.getJetTypeFqName(
             true
           )
-        }.all(::id)
-    }
+        }
+      }
     }
   }
 
@@ -700,18 +693,18 @@ class IrBasedDescriptorRemapper(val context: IrPluginContext) : DescriptorsRemap
   override fun remapDeclaredSimpleFunction(descriptor: FunctionDescriptor): FunctionDescriptor? {
     return descriptor.fqNameOrNull()?.let {
       context.referenceFunctions(it).map(IrFunctionSymbol::descriptor).singleOrNull {
-        it.valueParameters.size == descriptor.valueParameters.size && it.valueParameters.mapIndexed { index, param ->
+        it.valueParameters.size == descriptor.valueParameters.size && it.valueParameters.allIndexed { index, param ->
           val otherParam = descriptor.valueParameters[index]
           param.name == otherParam.name && param.type.getJetTypeFqName(true) == otherParam.type.getJetTypeFqName(true)
             && it.returnType?.getJetTypeFqName(true) == otherParam.returnType?.getJetTypeFqName(true)
-        }.all(::id)
-          && it.typeParameters.size == descriptor.typeParameters.size && it.typeParameters.mapIndexed { index, param ->
+        }
+          && it.typeParameters.size == descriptor.typeParameters.size && it.typeParameters.allIndexed { index, param ->
           val otherParam = descriptor.typeParameters[index]
           param.name == otherParam.name && param.defaultType.getJetTypeFqName(true) == otherParam.defaultType.getJetTypeFqName(
             true
           )
-        }.all(::id)
-    }
+        }
+      }
     }
   }
 

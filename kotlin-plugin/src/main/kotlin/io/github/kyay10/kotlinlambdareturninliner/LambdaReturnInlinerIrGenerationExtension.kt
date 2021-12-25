@@ -448,7 +448,7 @@ class InlineInvokeTransformer(
               }
             }
             val initialValueParameter = inlineInvoke0.valueParameters[0].deepCopyWithSymbols(this).apply {
-              type = context.irBuiltIns.function(expression.valueArgumentsCount)
+              type = context.irBuiltIns.functionN(expression.valueArgumentsCount)
                 .typeWith(
                   typeParameters.drop(1).map { it.createSimpleType() } + initialTypeParameter.createSimpleType())
             }
@@ -650,7 +650,7 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
             val inlinedVersion = inline(
               expression,
               this@InlineHigherOrderFunctionsAndVariablesTransformer.allScopes,
-              this@InlineHigherOrderFunctionsAndVariablesTransformer.currentScope!!.scope,
+              this@InlineHigherOrderFunctionsAndVariablesTransformer.currentScope!!,
               this@InlineHigherOrderFunctionsAndVariablesTransformer.context,
               this@InlineHigherOrderFunctionsAndVariablesTransformer.shadowsContext,
               renamesMap
@@ -753,7 +753,7 @@ class InlineHigherOrderFunctionsAndVariablesTransformer(
             val realValue = it?.lastElement()
             if (realValue is IrConst<*>)
               declarationIrBuilder.irBoolean(realValue.value == constArgument.value)
-            else if (realValue is IrExpression && (constArgument.type.isSubtypeOf(realValue.type, context.irBuiltIns) || (constArgument.type.isNullable() && realValue.type.isNullable())))
+            else if (realValue is IrExpression && (constArgument.type.isSubtypeOf(realValue.type, IrTypeSystemContextImpl(context.irBuiltIns)) || (constArgument.type.isNullable() && realValue.type.isNullable())))
               declarationIrBuilder.irEquals(realValue, constArgument)
             else declarationIrBuilder.irFalse()
           }
@@ -857,7 +857,7 @@ private fun IrBuilderWithScope.createWhenAccessForLambda(
                   putValueArgument(
                     0,
                     irExpression.safeAs<IrFunctionExpression>()?.apply {
-                      type = context.irBuiltIns.function(0).typeWith(lambdaReturnType)
+                      type = context.irBuiltIns.functionN(0).typeWith(lambdaReturnType)
                       function.body?.transformChildrenVoid(object : IrElementTransformerVoid() {
                         override fun visitGetValue(expression: IrGetValue): IrExpression {
                           function.valueParameters.indexOfOrNull(expression.symbol.owner)?.let {

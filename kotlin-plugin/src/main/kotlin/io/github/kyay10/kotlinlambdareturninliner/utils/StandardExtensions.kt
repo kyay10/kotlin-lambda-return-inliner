@@ -94,3 +94,14 @@ inline fun <T, R> List<T>.flatMap(transform: (T) -> Array<R>): List<R> {
 }
 
 inline fun <T> id(t: T): T = t
+
+/**
+ * Returns `true` if all elements match the given [predicate].
+ */
+inline fun <T> Iterable<T>.allIndexed(predicate: (index: Int, T) -> Boolean): Boolean {
+  if (this is Collection && isEmpty()) return true
+  this.forEachIndexed { index, element ->
+    if (!predicate(index, element)) return false
+  }
+  return true
+}
