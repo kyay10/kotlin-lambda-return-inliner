@@ -10,6 +10,7 @@ import org.jetbrains.kotlin.analyzer.AnalysisResult
 import org.jetbrains.kotlin.backend.common.phaser.PhaseConfig
 import org.jetbrains.kotlin.backend.jvm.JvmIrCodegenFactory
 import org.jetbrains.kotlin.backend.jvm.jvmPhases
+import org.jetbrains.kotlin.builtins.isFunctionType
 import org.jetbrains.kotlin.builtins.isFunctionTypeOrSubtype
 import org.jetbrains.kotlin.cli.common.CLIConfigurationKeys
 import org.jetbrains.kotlin.cli.common.messages.MessageCollector
@@ -28,6 +29,7 @@ import org.jetbrains.kotlin.config.JVMConfigurationKeys
 import org.jetbrains.kotlin.container.ComponentProvider
 import org.jetbrains.kotlin.container.get
 import org.jetbrains.kotlin.context.ProjectContext
+import org.jetbrains.kotlin.descriptors.ClassifierDescriptor
 import org.jetbrains.kotlin.descriptors.FunctionDescriptor
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.idea.KotlinLanguage
@@ -43,6 +45,7 @@ import org.jetbrains.kotlin.resolve.TopDownAnalysisMode
 import org.jetbrains.kotlin.resolve.jvm.extensions.AnalysisHandlerExtension
 import org.jetbrains.kotlin.resolve.multiplatform.isCommonSource
 import org.jetbrains.kotlin.serialization.deserialization.descriptors.DescriptorWithContainerSource
+import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.isFlexible
 import org.jetbrains.kotlin.types.typeUtil.isTypeParameter
 import org.jetbrains.kotlin.utils.addToStdlib.cast
@@ -74,7 +77,6 @@ class LambdaReturnInlinerAnalysisHandler(
   private lateinit var previousBindingTrace: BindingTrace
   private lateinit var previousModule: ModuleDescriptor
   private lateinit var ktFilesToIgnore: MutableSet<KtFile>
-  private val whitespaceCache = mutableMapOf<Int, String>()
   val fileToKtFileDeclarations: MutableMap<VirtualFile, KtFileDeclarations> = mutableMapOf()
   val jarPathToKtSourceFiles: MutableMap<String, List<VirtualFile>> = mutableMapOf()
 
@@ -86,7 +88,6 @@ class LambdaReturnInlinerAnalysisHandler(
     set(obj, newValue)
   }
 
-  @OptIn(ExperimentalStdlibApi::class)
   override fun doAnalysis(
     project: Project,
     module: ModuleDescriptor,
@@ -165,13 +166,13 @@ class LambdaReturnInlinerAnalysisHandler(
             || (!(resolvedCall.valueArguments.any { (key, value) ->
               (value.arguments.any {
                 it is KtLambdaArgument || it.getArgumentExpression()
-                  ?.typeThroughResolvingCall?.isFunctionTypeOrSubtype == true
-              } || key.declaresDefaultValue()) && ((key.type.isMarkedNullable && key.type.isFunctionTypeOrSubtype) || key.type.isFlexible() || key.type.isTypeParameter() || key.original.type.isFlexible()) || key.original.type.isTypeParameter()
+                  ?.typeThroughResolvingCall?.isFunctionTypeOrSubtypeCached == true
+              } || key.declaresDefaultValue()) && ((key.type.isMarkedNullable && key.type.isFunctionTypeOrSubtypeCached) || key.type.isFlexible() || key.type.isTypeParameter() || key.original.type.isFlexible()) || key.original.type.isTypeParameter()
             })
               && !(listOfNotNull(
               resolvedDescriptor.dispatchReceiverParameter toNotNull resolvedCall.dispatchReceiver,
               resolvedDescriptor.extensionReceiverParameter toNotNull resolvedCall.extensionReceiver
-            ).any { (key, value) -> value.type.isFunctionTypeOrSubtype && ((key.type.isFunctionTypeOrSubtype) || key.type.isFlexible()) })
+            ).any { (key, value) -> value.type.isFunctionTypeOrSubtypeCached && ((key.type.isFunctionTypeOrSubtypeCached) || key.type.isFlexible()) })
               )
           ) {
             return
@@ -202,7 +203,7 @@ class LambdaReturnInlinerAnalysisHandler(
                 }
               }
             } ?: return
-          val reader = CoreJarFileSystem().findFileByPath(
+          val reader = fs.findFileByPath(
             classFileLocation
           )?.contentsToByteArray()?.let { ClassReader(it) }
           val source = run {
@@ -276,7 +277,7 @@ class LambdaReturnInlinerAnalysisHandler(
         }
       })
       // We're deleting the text ranges by replacing them with whitespace
-      for (range in deletedRanges.sortedBy { it.startOffset }) {
+      for (range in deletedRanges) {
         for (i in range.startOffset until range.endOffset) {
           text[i] = ' '
         }
@@ -347,3 +348,28 @@ data class KtFileDeclarations(
 fun KtElement.acceptChildrenVoid(ktVisitorVoid: KtVisitorVoid) {
   acceptChildren(ktVisitorVoid, null)
 }
+
+private val _isFunctionTypeOrSubtypeCache: MutableMap<ClassifierDescriptor, Boolean> = hashMapOf()
+val KotlinType.isFunctionTypeOrSubtypeCached: Boolean
+  get() {
+    val thisClassifier = constructor.declarationDescriptor
+    val superTypes = constructor.supertypes
+    _isFunctionTypeOrSubtypeCache[thisClassifier]?.let { return it }
+    for (type in superTypes) {
+      _isFunctionTypeOrSubtypeCache[type.constructor.declarationDescriptor]?.let { return it }
+    }
+
+    val result = if (isFunctionType) true else isFunctionTypeOrSubtype
+    thisClassifier?.let { _isFunctionTypeOrSubtypeCache[it] = result }
+    if (!isFunctionType) {
+      // Must be a function subtype
+      // Add whichever supertype is a function type to the cache
+      for (type in superTypes) {
+        val typeClassifier = type.constructor.declarationDescriptor
+        if (type.isFunctionType) {
+          typeClassifier?.let { _isFunctionTypeOrSubtypeCache[it] = result }
+        }
+      }
+    }
+    return result
+  }

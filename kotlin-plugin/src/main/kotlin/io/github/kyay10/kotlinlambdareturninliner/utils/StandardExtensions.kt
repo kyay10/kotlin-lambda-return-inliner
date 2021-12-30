@@ -3,6 +3,7 @@
 package io.github.kyay10.kotlinlambdareturninliner.utils
 
 import kotlin.contracts.ExperimentalContracts
+import kotlin.contracts.InvocationKind
 import kotlin.contracts.contract
 import kotlin.experimental.ExperimentalTypeInference
 
@@ -60,7 +61,8 @@ inline fun <T, R, C : MutableCollection<in R>> List<T>.flatMapTo(destination: C,
 }
 
 /**
- * Returns a single list of all elements yielded from results of [transform] function being invoked on each element of original collection.
+ * Returns a single list of all elements yielded
+ * from results of [transform] function being invoked on each element of original collection.
  *
  */
 @OptIn(ExperimentalTypeInference::class)
@@ -107,4 +109,80 @@ inline fun <T> Iterable<T>.allIndexed(predicate: (index: Int, T) -> Boolean): Bo
     if (!predicate(index, element)) return false
   }
   return true
+}
+
+/**
+ * Applies the given [transform] function to each element of the original collection
+ * and appends the results to the given [destination].
+ */
+inline fun <T, R, C : MutableCollection<in R>> List<T>.mapTo(destination: C, transform: (T) -> R): C {
+  for (i in indices)
+    destination.add(transform(this[i]))
+  return destination
+}
+
+/**
+ * Returns a list containing the results of applying the given [transform] function
+ * to each element in the original collection.
+ */
+inline fun <T, R> List<T>.map(transform: (T) -> R): List<R> {
+  return mapTo(ArrayList(collectionSizeOrDefault(10)), transform)
+}
+
+/**
+ * Returns a list containing the results of applying the given [transform] function
+ * to each element in the original collection, or the original list if it doesn't have items
+ */
+inline fun <T> List<T>.mapOrOriginal(transform: (T) -> T): List<T> {
+  return if (isEmpty()) this else mapTo(ArrayList(collectionSizeOrDefault(10)), transform)
+}
+
+/**
+ * Returns the size of this iterable if it is known, or the specified [default] value otherwise.
+ */
+fun <T> Iterable<T>.collectionSizeOrDefault(default: Int): Int = if (this is Collection<*>) this.size else default
+
+/**
+ * Performs the given [action] on each element, providing sequential index with the element.
+ * @param [action] function that takes the index of an element and the element itself
+ * and performs the action on the element.
+ */
+@OptIn(ExperimentalContracts::class)
+inline fun <T> List<T>.forEachIndexed(action: (index: Int, T) -> Unit) {
+  contract {
+    callsInPlace(action, InvocationKind.UNKNOWN)
+  }
+  for (i in indices) action(i, this[i])
+}
+
+/**
+ * Performs the given [action] on each element.
+ */
+@Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE")
+@kotlin.internal.HidesMembers
+inline fun <T> List<T>.forEach(action: (T) -> Unit) {
+  for (i in indices) action(this[i])
+}
+
+/**
+ * Builds a new [MutableList] by populating a [MutableList] using the given [builderAction]
+ * and returning it.
+ *
+ * The list passed as a receiver to the [builderAction] is valid only inside that function.
+ * Using it outside of the function produces an unspecified behavior.
+ *
+ * The returned list is serializable (JVM).
+ *
+ * [capacity] is used to hint the expected number of elements added in the [builderAction].
+ *
+ * @throws IllegalArgumentException if the given [capacity] is negative.
+ */
+@OptIn(ExperimentalTypeInference::class, ExperimentalContracts::class)
+@SinceKotlin("1.6")
+inline fun <E> buildMutableList(
+  capacity: Int = 0,
+  @BuilderInference builderAction: MutableList<E>.() -> Unit
+): MutableList<E> {
+  contract { callsInPlace(builderAction, InvocationKind.EXACTLY_ONCE) }
+  return ArrayList<E>(capacity).apply(builderAction)
 }

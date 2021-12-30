@@ -13,6 +13,7 @@ import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.declarations.IrTypeParameter
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.symbols.FqNameEqualityChecker
+import org.jetbrains.kotlin.ir.symbols.IrClassifierSymbol
 import org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeImpl
@@ -94,24 +95,30 @@ fun IrMemberAccessExpression<*>.changeArgument(index: Int, valueArgument: IrExpr
   }
 }
 
-tailrec fun accumulateStatementsExceptLast(
+fun accumulateStatementsExceptLast(statement: IrStatement): List<IrStatement> =
+  accumulateStatements(statement).apply { removeLast() }
+
+tailrec fun accumulateStatements(
   statement: IrStatement,
   list: MutableList<IrStatement> = mutableListOf()
-): List<IrStatement> {
-  return if (statement !is IrContainerExpression) list else {
-    list.addAll(statement.statements.dropLast(1))
-    accumulateStatementsExceptLast(statement.statements.last(), list)
+): MutableList<IrStatement> {
+  return if (statement !is IrContainerExpression || statement.statements.isEmpty()) {
+    list.apply { add(statement) }
+  } else {
+    list.addAll(statement.statements)
+    list.removeLast()
+    accumulateStatements(statement.statements.last(), list)
   }
 }
 
 inline fun <reified T : IrElement> MutableList<T?>.transformInPlace(transformation: (T) -> IrElement) {
-  for (i in 0 until size) {
+  for (i in indices) {
     get(i)?.let { set(i, transformation(it) as T) }
   }
 }
 
 fun <T : IrElement, D> MutableList<T?>.transformInPlace(transformer: IrElementTransformer<D>, data: D) {
-  for (i in 0 until size) {
+  for (i in indices) {
     // Cast to IrElementBase to avoid casting to interface and invokeinterface, both of which are slow.
     @Suppress("UNCHECKED_CAST")
     get(i)?.let { set(i, (it as IrElementBase).transform(transformer, data) as T) }
@@ -123,7 +130,7 @@ val IrFunctionAccessExpression.isInvokeCall: Boolean
     val irFunction = symbol.owner
     return irFunction.name == OperatorNameConventions.INVOKE &&
       irFunction.safeAs<IrSimpleFunction>()?.isOperator == true &&
-      dispatchReceiver?.type?.isFunctionTypeOrSubtype() == true &&
+      dispatchReceiver?.type?.isFunctionTypeOrSubtype == true &&
       extensionReceiver == null
   }
 
@@ -150,5 +157,46 @@ inline fun <reified T : IrElement> T.deepCopyWithSymbols(
 ): T {
   acceptVoid(symbolRemapper)
   val typeRemapper = DeepCopyTypeRemapper(symbolRemapper)
-  return transform(createCopier(symbolRemapper, typeRemapper), null).patchDeclarationParents(initialParent) as T
+  return transform(
+    createCopier(symbolRemapper, typeRemapper).also { typeRemapper.deepCopy = it },
+    null
+  ).patchDeclarationParents(initialParent) as T
 }
+
+inline fun <reified T : IrElement> T.deepCopyWithSymbols(
+  initialParent: IrDeclarationParent? = null,
+  createCopier: (SymbolRemapper, TypeRemapper) -> DeepCopyIrTreeWithSymbols = ::DeepCopyIrTreeWithSymbols
+): T {
+  val symbolRemapper = DeepCopySymbolRemapper()
+  acceptVoid(symbolRemapper)
+  val typeRemapper = DeepCopyTypeRemapper(symbolRemapper)
+  return transform(
+    createCopier(symbolRemapper, typeRemapper).also { typeRemapper.deepCopy = it },
+    null
+  ).patchDeclarationParents(initialParent) as T
+}
+
+private val _isFunctionTypeOrSubtypeCache: MutableMap<IrClassifierSymbol, Boolean> = hashMapOf()
+val IrType.isFunctionTypeOrSubtype: Boolean
+  get() {
+    val thisClassifier = classifierOrNull
+    val superTypes = superTypes()
+    _isFunctionTypeOrSubtypeCache[thisClassifier]?.let { return it }
+    for (type in superTypes) {
+      _isFunctionTypeOrSubtypeCache[type.classifierOrNull]?.let { return it }
+    }
+
+    val result = if (thisClassifier?.isFunction() == true) true else isFunctionTypeOrSubtype()
+    thisClassifier?.let { _isFunctionTypeOrSubtypeCache[it] = result }
+    if (thisClassifier?.isFunction() == false) {
+      // Must be a function subtype
+      // Add whichever supertype is a function type to the cache
+      for (type in superTypes) {
+        val typeClassifier = type.classifierOrNull
+        if (typeClassifier?.isFunction() == true) {
+          typeClassifier.let { _isFunctionTypeOrSubtypeCache[it] = result }
+        }
+      }
+    }
+    return result
+  }

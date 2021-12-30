@@ -11,6 +11,8 @@ package io.github.kyay10.kotlinlambdareturninliner.internal
  */
 
 
+import io.github.kyay10.kotlinlambdareturninliner.utils.forEachIndexed
+import io.github.kyay10.kotlinlambdareturninliner.utils.mapOrOriginal
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationParent
 import org.jetbrains.kotlin.ir.declarations.IrTypeParametersContainer
@@ -20,7 +22,7 @@ import org.jetbrains.kotlin.ir.expressions.IrTypeOperatorCall
 import org.jetbrains.kotlin.ir.expressions.impl.IrTypeOperatorCallImpl
 import org.jetbrains.kotlin.ir.symbols.*
 import org.jetbrains.kotlin.ir.types.*
-import org.jetbrains.kotlin.ir.types.impl.buildSimpleType
+import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeImpl
 import org.jetbrains.kotlin.ir.types.impl.makeTypeProjection
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.acceptVoid
@@ -76,16 +78,21 @@ internal class DeepCopyIrTreeWithSymbolsForInliner(
 
     override fun leaveScope() {}
 
-    private fun remapTypeArguments(arguments: List<IrTypeArgument>, erase: Boolean) =
-      arguments.map { argument ->
-        (argument as? IrTypeProjection)?.let {
-          makeTypeProjection(
-            remapTypeAndOptionallyErase(it.type, erase),
-            it.variance
+    private fun remapTypeArguments(arguments: List<IrTypeArgument>, erase: Boolean): List<IrTypeArgument> {
+      var newArguments: MutableList<IrTypeArgument>? = null
+      arguments.forEachIndexed { index, argument ->
+        if (argument is IrTypeProjection) {
+          if (newArguments == null)
+            newArguments = arguments.toMutableList()
+          @Suppress("ReplaceNotNullAssertionWithElvisReturn")
+          newArguments!![index] = makeTypeProjection(
+            remapTypeAndOptionallyErase(argument.type, erase),
+            argument.variance
           )
         }
-          ?: argument
       }
+      return newArguments ?: arguments
+    }
 
     override fun remapType(type: IrType) = remapTypeAndOptionallyErase(type, erase = false)
 
@@ -110,18 +117,22 @@ internal class DeepCopyIrTreeWithSymbolsForInliner(
       if (substitutedType is IrDynamicType) return substitutedType
 
       if (substitutedType is IrSimpleType) {
-        return substitutedType.buildSimpleType {
-          kotlinType = null
-          hasQuestionMark = type.hasQuestionMark or substitutedType.isMarkedNullable()
-        }
+        return IrSimpleTypeImpl(
+          substitutedType.classifier,
+          type.hasQuestionMark or substitutedType.isMarkedNullable(),
+          substitutedType.arguments,
+          substitutedType.annotations,
+          substitutedType.abbreviation
+        )
       }
 
-      return type.buildSimpleType {
-        kotlinType = null
-        this.classifier = symbolRemapper.getReferencedClassifier(classifier)
-        arguments = remapTypeArguments(type.arguments, erase)
-        annotations = type.annotations.map { it.transform(copier, null) as IrConstructorCall }
-      }
+      return IrSimpleTypeImpl(
+        symbolRemapper.getReferencedClassifier(classifier),
+        type.hasQuestionMark,
+        remapTypeArguments(type.arguments, erase),
+        type.annotations.mapOrOriginal { it.transform(copier, null) as IrConstructorCall },
+        type.abbreviation
+      )
     }
   }
 

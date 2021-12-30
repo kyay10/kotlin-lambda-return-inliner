@@ -2,6 +2,7 @@
 
 package io.github.kyay10.kotlinlambdareturninliner
 
+import io.github.kyay10.kotlinlambdareturninliner.utils.buildMutableList
 import org.jetbrains.kotlin.ir.builders.IrBuilderWithScope
 import org.jetbrains.kotlin.ir.declarations.IrVariable
 import org.jetbrains.kotlin.ir.declarations.copyAttributes
@@ -21,7 +22,7 @@ fun IrBuilderWithScope.irWhenWithMapper(
   type: IrType,
   tempInt: IrVariable,
   mapper: List<IrExpression?>,
-  branches: List<IrBranch>
+  branches: MutableList<IrBranch>
 ): IrWhenWithMapperImpl {
   val irWhenWithMapper = IrWhenWithMapperImpl(startOffset, endOffset, type, tempInt, mapper, null, branches)
   branches.forEachIndexed { index, irBranch ->
@@ -55,23 +56,9 @@ class IrWhenWithMapperImpl(
   override val tempInt: IrVariable,
   mapper: List<IrExpression?>,
   override val origin: IrStatementOrigin? = null,
-) : IrWhenWithMapper() {
-
-  override val mapper: MutableList<IrExpression?> = mapper.toMutableList()
-
-  constructor(
-    startOffset: Int,
-    endOffset: Int,
-    type: IrType,
-    tempInt: IrVariable,
-    mapper: List<IrExpression?>,
-    origin: IrStatementOrigin?,
-    branches: List<IrBranch>
-  ) : this(startOffset, endOffset, type, tempInt, mapper, origin) {
-    this.branches.addAll(branches)
-  }
-
   override val branches: MutableList<IrBranch> = ArrayList()
+) : IrWhenWithMapper() {
+  override val mapper: MutableList<IrExpression?> = mapper.toMutableList()
 }
 
 abstract class IrWhenWithMapper : IrWhen() {
@@ -131,10 +118,13 @@ open class WhenWithMapperAwareDeepCopyIrTreeWithSymbols(
         expression.tempInt,
         expression.mapper,
         mapStatementOrigin(expression.origin),
+        buildMutableList(expression.branches.size) {
+          for (branch in expression.branches) {
+            add(branch.transform())
+          }
+        }
       ).copyAttributes(expression).also { newWhen ->
         copiedWhens[expression] = newWhen
-        newWhen.branches +=
-          expression.branches.map { it.transform() }
       }
     } else {
       super.visitWhen(expression)
