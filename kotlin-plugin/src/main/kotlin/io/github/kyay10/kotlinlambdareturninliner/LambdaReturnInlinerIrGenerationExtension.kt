@@ -84,20 +84,7 @@ class LambdaReturnInlinerIrGenerationExtension(
         pluginContext
       )
     )
-    moduleFragment.lowerWith(object : IrFileTransformerVoidWithContext(pluginContext) {
-      override fun visitTypeOperator(expression: IrTypeOperatorCall): IrExpression {
-        if (expression.operator == IMPLICIT_COERCION_TO_UNIT && expression.argument.type.isFunctionTypeOrSubtype) {
-          expression.argument.replaceLastElementAndIterateBranches({ replacer, statement ->
-            expression.argument = replacer(statement).cast()
-          }, expression.argument.type) {
-            if (it is IrFunctionExpression)
-              declarationIrBuilder.irNull()
-            else it
-          }
-        }
-        return super.visitTypeOperator(expression)
-      }
-    })
+    moduleFragment.lowerWith(CoercionToUnitWithUselessFunctionObjectTransformer(pluginContext))
     // Reinterpret WhenWithMapper
     moduleFragment.lowerWith(object :
       IrFileTransformerVoidWithContext(pluginContext) {
@@ -220,6 +207,9 @@ class LambdaReturnInlinerIrGenerationExtension(
         return result
       }
     })
+
+    moduleFragment.lowerWith(CoercionToUnitWithUselessFunctionObjectTransformer(pluginContext))
+
     moduleFragment.lowerWith(object :
       IrFileTransformerVoidWithContext(pluginContext) {
       override fun visitFunctionNew(declaration: IrFunction): IrStatement {
@@ -818,4 +808,20 @@ private fun IrBuilderWithScope.createWhenAccessForLambda(
     createdFunction,
     IrStatementOrigin.LAMBDA
   )
+}
+
+class CoercionToUnitWithUselessFunctionObjectTransformer(pluginContext: IrPluginContext) :
+  IrFileTransformerVoidWithContext(pluginContext) {
+  override fun visitTypeOperator(expression: IrTypeOperatorCall): IrExpression {
+    if (expression.operator == IMPLICIT_COERCION_TO_UNIT && expression.argument.type.isFunctionTypeOrSubtype) {
+      expression.argument.replaceLastElementAndIterateBranches({ replacer, statement ->
+        expression.argument = replacer(statement).cast()
+      }, expression.argument.type) {
+        if (it is IrFunctionExpression)
+          declarationIrBuilder.irNull()
+        else it
+      }
+    }
+    return super.visitTypeOperator(expression)
+  }
 }

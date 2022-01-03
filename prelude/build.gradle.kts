@@ -4,11 +4,7 @@ plugins {
   id("convention.publication")
 }
 
-repositories {
-  mavenCentral()
-}
 val dokkaHtml by tasks.getting(org.jetbrains.dokka.gradle.DokkaTask::class)
-
 val javadocJar: TaskProvider<Jar> by tasks.registering(Jar::class) {
   dependsOn(dokkaHtml)
   archiveClassifier.set("javadoc")

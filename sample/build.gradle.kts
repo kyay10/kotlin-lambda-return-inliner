@@ -1,6 +1,7 @@
 plugins {
-  kotlin("multiplatform") version "1.5.21"
-  id("io.github.kyay10.kotlin-lambda-return-inliner") version "0.1.1"
+  kotlin("multiplatform") version "1.6.10"
+  kotlin("kapt") version "1.6.10"
+  id("io.github.kyay10.kotlin-lambda-return-inliner") version "0.1.2"
 }
 
 group = "io.github.kyay10.kotlin_lambda_return_inliner"
@@ -8,14 +9,12 @@ version = "1.0-SNAPSHOT"
 
 repositories {
   mavenCentral()
-  maven(url = "https://jitpack.io")
 }
 
 kotlin {
   jvm {
     compilations.all {
       kotlinOptions.jvmTarget = "1.8"
-      kotlinOptions.useIR = true
       kotlinOptions.freeCompilerArgs += "-Xallow-kotlin-package"
     }
     testRuns["test"].executionTask.configure {

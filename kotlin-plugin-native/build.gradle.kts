@@ -6,19 +6,25 @@ plugins {
   kotlin("jvm")
   kotlin("kapt")
   id("org.jetbrains.dokka")
+  id("io.github.kyay10.kotlin-lambda-return-inliner")
   id("convention.publication")
 }
 
 dependencies {
   implementation("org.ow2.asm:asm:9.2")
   compileOnly("org.jetbrains.kotlin:kotlin-compiler")
+  compileOnly("org.jetbrains.kotlin:kotlin-annotation-processing-embeddable")
   implementation("org.jetbrains.kotlin:kotlin-reflect")
 
-  kapt("com.google.auto.service:auto-service:1.0")
-  compileOnly("com.google.auto.service:auto-service-annotations:1.0")
+  kapt("com.google.auto.service:auto-service:1.0.1")
+  compileOnly("com.google.auto.service:auto-service-annotations:1.0.1")
 
   // Needed for running tests since the tests inherit out classpath
-  implementation(project(":prelude"))
+  testImplementation(project(":prelude"))
+}
+
+tasks.withType<KotlinCompile> {
+  incremental = false
 }
 
 val syncSource = tasks.register<Sync>("syncSource") {
