@@ -1,7 +1,7 @@
 # kotlin-lambda-return-inliner
 
-![Maven Central](https://img.shields.io/maven-central/v/io.github.kyay10.kotlin-null-defaults/kotlin-plugin?color=gree) (Compiler plugin)
-![Maven Central](https://img.shields.io/maven-central/v/io.github.kyay10.kotlin-null-defaults/gradle-plugin?color=gree) (Gradle Plugin)
+![Maven Central](https://img.shields.io/maven-central/v/io.github.kyay10.kotlin-lambda-return-inliner/kotlin-plugin?color=gree) (Compiler plugin)
+![Maven Central](https://img.shields.io/maven-central/v/io.github.kyay10.kotlin-lambda-return-inliner/gradle-plugin?color=gree) (Gradle Plugin)
 
 [![](https://jitpack.io/v/kyay10/kotlin-lambda-return-inliner.svg)](https://jitpack.io/#kyay10/kotlin-lambda-return-inliner)
 [![Gradle Plugin Portal](https://img.shields.io/maven-metadata/v?color=gree&label=gradlePluginPortal&metadataUrl=https%3A%2F%2Fplugins.gradle.org%2Fm2%2Fio%2Fgithub%2Fkyay10%2Fkotlin-lambda-return-inliner%2Fio.github.kyay10.kotlin-lambda-return-inliner.gradle.plugin%2Fmaven-metadata.xml)](https://plugins.gradle.org/plugin/io.github.kyay10.kotlin-lambda-return-inliner)
