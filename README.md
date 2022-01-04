@@ -1,8 +1,10 @@
 # kotlin-lambda-return-inliner
 
+![Maven Central](https://img.shields.io/maven-central/v/io.github.kyay10.kotlin-null-defaults/kotlin-plugin?color=gree) (Compiler plugin)
+![Maven Central](https://img.shields.io/maven-central/v/io.github.kyay10.kotlin-null-defaults/gradle-plugin?color=gree) (Gradle Plugin)
+
 [![](https://jitpack.io/v/kyay10/kotlin-lambda-return-inliner.svg)](https://jitpack.io/#kyay10/kotlin-lambda-return-inliner)
-[![Gradle Plugin Portal](https://img.shields.io/maven-metadata/v/https/plugins.gradle.org/m2/io/github/kyay10/kotlin-lambda-return-inliner/io.github.kyay10.kotlinlambdareturninliner/maven-metadata.xml.svg?colorB=007ec6&label=gradlePluginPortal)](https://plugins.gradle.org/plugin/io.github.kyay10.kotlin-lambda-return-inliner) (
-Currently pending approval)
+[![Gradle Plugin Portal](https://img.shields.io/maven-metadata/v?color=gree&label=gradlePluginPortal&metadataUrl=https%3A%2F%2Fplugins.gradle.org%2Fm2%2Fio%2Fgithub%2Fkyay10%2Fkotlin-lambda-return-inliner%2Fio.github.kyay10.kotlin-lambda-return-inliner.gradle.plugin%2Fmaven-metadata.xml)](https://plugins.gradle.org/plugin/io.github.kyay10.kotlin-lambda-return-inliner)
 
 A Kotlin compiler plugin that optimises lambdas returned by inlined functions and stored in local variables. This
 optimisation can be used to emulate structs (and more) in Kotlin code at no cost whatsoever. This repo is currently in a
